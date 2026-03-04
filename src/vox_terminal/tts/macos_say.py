@@ -42,6 +42,11 @@ class MacOSSayTTS(TTSEngine):
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
         )
-        await self._proc.wait()
+        try:
+            await asyncio.wait_for(self._proc.wait(), timeout=120.0)
+        except TimeoutError:
+            logger.warning("Playback timed out — killing process")
+            self._proc.kill()
+            await self._proc.wait()
         self._proc = None
         logger.debug("macOS say: %.0fms", (_time.monotonic() - t0) * 1000)

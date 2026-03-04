@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -109,6 +110,27 @@ class TestMacOSSayTTS:
             assert args[0][5] == "Hello world"
             mock_proc.wait.assert_awaited_once()
 
+    async def test_subprocess_timeout_kills_process(self) -> None:
+        """If the playback process hangs, it should be killed after timeout."""
+        settings = TTSSettings(macos_voice="Alex", macos_rate=180)
+        engine = MacOSSayTTS(settings)
+
+        mock_proc = AsyncMock()
+        # wait() returns normally after kill
+        mock_proc.wait = AsyncMock(return_value=0)
+        mock_proc.kill = MagicMock()
+
+        with (
+            patch("vox_terminal.tts.macos_say.asyncio.create_subprocess_exec",
+                  new_callable=AsyncMock, return_value=mock_proc),
+            patch("vox_terminal.tts.macos_say.asyncio.wait_for",
+                  side_effect=TimeoutError),
+        ):
+            await engine.speak("Hello world")
+
+            mock_proc.kill.assert_called_once()
+            assert engine._proc is None
+
 
 # ---------------------------------------------------------------------------
 # create_tts_engine factory
@@ -184,7 +206,7 @@ class TestElevenLabsTTS:
             mock_proc.wait.assert_awaited_once()
 
     async def test_speak_streaming_with_ffplay(self) -> None:
-        """With ffplay available, should pipe chunks to stdin."""
+        """With ffplay available (non-macOS), should pipe chunks to stdin."""
         settings = TTSSettings(
             engine="elevenlabs",
             elevenlabs_api_key="test-key",
@@ -192,7 +214,10 @@ class TestElevenLabsTTS:
             elevenlabs_model_id="eleven_flash_v2_5",
         )
 
-        with patch("vox_terminal.tts.elevenlabs_tts.shutil.which", return_value="/usr/bin/ffplay"):
+        with (
+            patch("vox_terminal.tts.elevenlabs_tts.platform.system", return_value="Linux"),
+            patch("vox_terminal.tts.elevenlabs_tts.shutil.which", return_value="/usr/bin/ffplay"),
+        ):
             engine = ElevenLabsTTS(settings)
 
         assert engine._use_ffplay

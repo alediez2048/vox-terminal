@@ -23,6 +23,7 @@ class TestGeneralSettings:
         s = GeneralSettings()
         assert s.verbose is False
         assert s.log_level == "INFO"
+        assert s.barge_in_enabled is False
 
     def test_custom(self, tmp_path: Path) -> None:
         s = GeneralSettings(project_root=tmp_path, verbose=True, log_level="DEBUG")
