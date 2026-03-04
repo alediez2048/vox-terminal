@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import platform
 import shutil
@@ -48,6 +49,17 @@ class ElevenLabsTTS(TTSEngine):
         super().interrupt()
         if self._proc is not None and self._proc.returncode is None:
             self._proc.terminate()
+            # Schedule SIGKILL 1s later in case process ignores SIGTERM
+            loop = asyncio.get_event_loop()
+            proc = self._proc  # capture ref for closure
+            loop.call_later(1.0, self._force_kill, proc)
+
+    @staticmethod
+    def _force_kill(proc: asyncio.subprocess.Process) -> None:
+        """Force-kill a process if it hasn't exited after SIGTERM."""
+        if proc.returncode is None:
+            with contextlib.suppress(ProcessLookupError):
+                proc.kill()
 
     async def speak(self, text: str) -> None:
         """Synthesise *text* via ElevenLabs and play it."""
@@ -108,6 +120,10 @@ class ElevenLabsTTS(TTSEngine):
             self._proc.stdin.close()
 
         try:
+            await asyncio.wait_for(self._proc.wait(), timeout=120.0)
+        except TimeoutError:
+            logger.warning("Playback timed out — killing process")
+            self._proc.kill()
             await self._proc.wait()
         except asyncio.CancelledError:
             if self._proc.returncode is None:
@@ -159,6 +175,10 @@ class ElevenLabsTTS(TTSEngine):
                 stderr=asyncio.subprocess.DEVNULL,
             )
             try:
+                await asyncio.wait_for(self._proc.wait(), timeout=120.0)
+            except TimeoutError:
+                logger.warning("Playback timed out — killing process")
+                self._proc.kill()
                 await self._proc.wait()
             except asyncio.CancelledError:
                 if self._proc.returncode is None:

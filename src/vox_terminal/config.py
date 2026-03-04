@@ -18,6 +18,7 @@ class GeneralSettings(BaseModel):
     memory_enabled: bool = True
     memory_db_path: Path | None = None
     memory_max_messages: int = 40
+    barge_in_enabled: bool = False
 
 
 class STTSettings(BaseModel):

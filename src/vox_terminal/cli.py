@@ -302,10 +302,11 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
             console.print(f"\n[bold cyan]You:[/bold cyan] {question}")
             console.print("[bold green]Vox-Terminal:[/bold green] ", end="")
 
-            # --- Barge-in: listen for interruption during TTS ---
+            # --- TTS playback (with optional barge-in) ---
             interrupted_audio = None
-            if use_voice:
-                # Start mic monitoring in parallel with TTS
+
+            if use_voice and settings.general.barge_in_enabled:
+                # Barge-in path: monitor mic during TTS (opt-in for headphone users)
                 record_task = asyncio.create_task(
                     capture.record_until_silence(
                         silence_threshold=settings.stt.silence_threshold,
@@ -323,19 +324,27 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
                         _ask_and_speak(q, llm, tts, h)
                     )
 
-                    # Grace period: ignore mic input for 1.5s to avoid
-                    # TTS speaker audio feeding back into the mic and
-                    # triggering an immediate false barge-in.
                     speech_event = capture.speech_started
+                    # Grace period: ignore mic input for 1.5s to avoid
+                    # TTS speaker audio feeding back into the mic.
                     await asyncio.sleep(1.5)
-                    # Clear any false triggers from TTS audio feedback
                     if speech_event is not None:
                         speech_event.clear()
 
+                    # Hysteresis: require 6 consecutive positive VAD checks
+                    # (~300ms sustained speech) before triggering interrupt.
+                    consecutive_hits = 0
+                    required_hits = 6
+
                     while not tts_task.done():
                         if speech_event is not None and speech_event.is_set():
-                            tts.interrupt()
-                            break
+                            consecutive_hits += 1
+                            speech_event.clear()
+                            if consecutive_hits >= required_hits:
+                                tts.interrupt()
+                                break
+                        else:
+                            consecutive_hits = 0
                         await asyncio.sleep(0.05)
 
                     return await tts_task
@@ -345,13 +354,29 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
                 if capture.speech_started and capture.speech_started.is_set():
                     # User interrupted — finish recording their speech
                     console.print("\n[dim](interrupted)[/dim]")
-                    interrupted_audio = await record_task
+                    try:
+                        interrupted_audio = await asyncio.wait_for(
+                            record_task, timeout=5.0
+                        )
+                    except TimeoutError:
+                        logger.warning("Barge-in record timed out — cancelling")
+                        capture.cancel_recording()
+                        with contextlib.suppress(
+                            AudioCaptureError, asyncio.CancelledError
+                        ):
+                            await record_task
                 else:
                     # TTS finished naturally — cancel the mic monitor
                     capture.cancel_recording()
                     with contextlib.suppress(AudioCaptureError, asyncio.CancelledError):
-                        await record_task
+                        try:
+                            await asyncio.wait_for(record_task, timeout=5.0)
+                        except TimeoutError:
+                            record_task.cancel()
+                            with contextlib.suppress(asyncio.CancelledError):
+                                await record_task
             else:
+                # Default path: no barge-in, TTS plays fully
                 response_text = await _ask_and_speak(question, llm, tts, history or None)
 
             # Update history + persist
@@ -364,7 +389,7 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
                 if len(history) > max_history:
                     history = history[-max_history:]
 
-            # If user interrupted, process their speech immediately
+            # If user interrupted via barge-in, process their speech immediately
             if interrupted_audio is not None and interrupted_audio.size > 0:
                 console.print("[dim]Transcribing...[/dim]")
                 result = await stt.transcribe(
@@ -372,7 +397,6 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
                 )
                 question = result.text.strip()
                 if question and question.lower() not in ("q", "quit", "exit"):
-                    # Feed the interruption back as the next question
                     console.print(f"\n[bold cyan]You:[/bold cyan] {question}")
                     console.print("[bold green]Vox-Terminal:[/bold green] ", end="")
 
