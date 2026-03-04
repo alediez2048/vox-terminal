@@ -1,6 +1,6 @@
 # VoxCursor
 
-Terminal voice assistant for Cursor IDE. Ask questions about your project via voice and receive spoken answers — powered by Claude, Whisper, and macOS TTS.
+Terminal voice assistant for IDEs Like VS Code, Cursor and Coding Agents like Claude Code. Ask questions about your project via voice and receive spoken answers — powered by Claude, Whisper, and macOS TTS.
 
 ## Install
 
