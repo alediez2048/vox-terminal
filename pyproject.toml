@@ -1,0 +1,95 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vox-terminal"
+version = "0.1.0"
+description = "Voice-powered terminal assistant"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [{ name = "Jad" }]
+keywords = ["voice", "assistant", "terminal", "tts", "stt", "cli"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+dependencies = [
+    "anthropic>=0.40.0",
+    "faster-whisper>=1.1.0",
+    "numpy>=1.26.0",
+    "openai>=1.50.0",
+    "pydantic>=2.9.0",
+    "pydantic-settings>=2.6.0",
+    "sounddevice>=0.5.0",
+    "typer>=0.15.0",
+    "rich>=13.9.0",
+    "mcp[cli]>=1.0.0",
+    "elevenlabs>=1.0.0",
+]
+
+[project.optional-dependencies]
+vad = [
+    "silero-vad>=5.0",
+    "torch>=2.0",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0",
+    "pytest-mock>=3.14",
+    "ruff>=0.8.0",
+    "mypy>=1.13",
+    "pre-commit>=4.0",
+    "detect-secrets>=1.5",
+]
+
+[project.urls]
+Homepage = "https://github.com/jad/vox-terminal"
+Repository = "https://github.com/jad/vox-terminal"
+Issues = "https://github.com/jad/vox-terminal/issues"
+
+[project.scripts]
+vox-terminal = "vox_terminal.cli:app_main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/vox_terminal"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = ["sounddevice", "faster_whisper", "mcp.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "slow: marks tests as slow",
+    "integration: marks integration tests",
+]
