@@ -107,8 +107,14 @@ class ElevenLabsTTS(TTSEngine):
         if self._proc.stdin is not None:
             self._proc.stdin.close()
 
-        await self._proc.wait()
-        self._proc = None
+        try:
+            await self._proc.wait()
+        except asyncio.CancelledError:
+            if self._proc.returncode is None:
+                self._proc.terminate()
+            raise
+        finally:
+            self._proc = None
         logger.debug(
             "ElevenLabs streaming: %.0fms total, %d bytes",
             (_time.monotonic() - t0) * 1000,
@@ -152,7 +158,13 @@ class ElevenLabsTTS(TTSEngine):
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.DEVNULL,
             )
-            await self._proc.wait()
-            self._proc = None
+            try:
+                await self._proc.wait()
+            except asyncio.CancelledError:
+                if self._proc.returncode is None:
+                    self._proc.terminate()
+                raise
+            finally:
+                self._proc = None
         finally:
             tmp_path.unlink(missing_ok=True)

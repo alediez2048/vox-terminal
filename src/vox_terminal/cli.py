@@ -98,6 +98,9 @@ async def _ask_and_speak(
     except anthropic.APIError as exc:
         console.print(f"[red]API error: {exc}[/red]")
         return ""
+    except asyncio.CancelledError:
+        # Barge-in interrupted playback — not an error
+        return "".join(chunks)
     except TypeError as exc:
         if "authentication" in str(exc).lower():
             console.print(
