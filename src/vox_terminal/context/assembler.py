@@ -6,8 +6,12 @@ import logging
 import time as _time
 from pathlib import Path
 
-from vox_terminal.config import GeneralSettings, MCPSettings
-from vox_terminal.context.sources.configs import get_config_context
+from vox_terminal.config import ContextSettings, GeneralSettings, MCPSettings
+from vox_terminal.context.sources.configs import (
+    get_config_context,
+    get_config_file_paths,
+)
+from vox_terminal.context.sources.files import get_file_contents, resolve_file_patterns
 from vox_terminal.context.sources.git import get_git_context
 from vox_terminal.context.sources.tree import get_directory_tree
 
@@ -21,9 +25,11 @@ class ContextAssembler:
         self,
         general: GeneralSettings | None = None,
         mcp: MCPSettings | None = None,
+        context_settings: ContextSettings | None = None,
     ) -> None:
         self._general = general or GeneralSettings()
         self._mcp = mcp or MCPSettings()
+        self._context = context_settings or ContextSettings()
 
     @property
     def project_root(self) -> Path:
@@ -49,12 +55,56 @@ class ContextAssembler:
         """
         t0 = _time.monotonic()
         root = self.project_root
+        ctx = self._context
         sections: list[str] = []
+        remaining = ctx.max_context_chars
 
         # -- Project configs & README --
-        config_ctx = get_config_context(root)
+        config_ctx = get_config_context(
+            root, read_full_readme=ctx.read_full_readme,
+        )
         if config_ctx:
             sections.append(f"## Project info\n\n{config_ctx}")
+            remaining -= len(config_ctx)
+
+        # -- Config file contents --
+        if ctx.read_config_files and remaining > 0:
+            config_paths = get_config_file_paths(root)
+            if config_paths:
+                content = get_file_contents(
+                    root, config_paths,
+                    max_file_size=ctx.max_file_size,
+                    max_total_chars=remaining,
+                )
+                if content:
+                    sections.append(f"## Config file contents\n\n{content}")
+                    remaining -= len(content)
+
+        # -- Documentation files --
+        if ctx.doc_patterns and remaining > 0:
+            doc_paths = resolve_file_patterns(root, ctx.doc_patterns)
+            if doc_paths:
+                content = get_file_contents(
+                    root, doc_paths,
+                    max_file_size=ctx.max_file_size,
+                    max_total_chars=remaining,
+                )
+                if content:
+                    sections.append(f"## Documentation\n\n{content}")
+                    remaining -= len(content)
+
+        # -- User-specified files --
+        if ctx.include_files and remaining > 0:
+            user_paths = resolve_file_patterns(root, ctx.include_files)
+            if user_paths:
+                content = get_file_contents(
+                    root, user_paths,
+                    max_file_size=ctx.max_file_size,
+                    max_total_chars=remaining,
+                )
+                if content:
+                    sections.append(f"## Project files\n\n{content}")
+                    remaining -= len(content)
 
         # -- Git --
         if include_git:

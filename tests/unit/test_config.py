@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from vox_terminal.config import (
+    ContextSettings,
     GeneralSettings,
     LLMSettings,
     MCPSettings,
@@ -64,6 +65,34 @@ class TestMCPSettings:
         assert s.tree_depth == 3
 
 
+class TestContextSettings:
+    def test_defaults(self) -> None:
+        s = ContextSettings()
+        assert s.include_files == []
+        assert s.max_file_size == 50_000
+        assert s.max_context_chars == 200_000
+        assert s.read_config_files is True
+        assert s.read_full_readme is True
+        assert len(s.doc_patterns) > 0
+        assert "CHANGELOG.md" in s.doc_patterns
+
+    def test_custom_values(self) -> None:
+        s = ContextSettings(
+            include_files=["src/**/*.py"],
+            max_file_size=10_000,
+            max_context_chars=50_000,
+            read_config_files=False,
+            read_full_readme=False,
+            doc_patterns=["NOTES.md"],
+        )
+        assert s.include_files == ["src/**/*.py"]
+        assert s.max_file_size == 10_000
+        assert s.max_context_chars == 50_000
+        assert s.read_config_files is False
+        assert s.read_full_readme is False
+        assert s.doc_patterns == ["NOTES.md"]
+
+
 class TestVoxTerminalSettings:
     def test_defaults(self, clean_env: None) -> None:
         s = VoxTerminalSettings()
@@ -72,6 +101,7 @@ class TestVoxTerminalSettings:
         assert isinstance(s.llm, LLMSettings)
         assert isinstance(s.tts, TTSSettings)
         assert isinstance(s.mcp, MCPSettings)
+        assert isinstance(s.context, ContextSettings)
 
     def test_env_override(self, clean_env: None) -> None:
         os.environ["VOX_TERMINAL_LLM__API_KEY"] = "sk-test-key"
