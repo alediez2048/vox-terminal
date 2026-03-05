@@ -26,7 +26,14 @@ _CONFIG_FILES: tuple[str, ...] = (
     "build.gradle",
 )
 
+# Files that should never have their contents read (secrets, credentials).
+_SENSITIVE_CONFIG_FILES: frozenset[str] = frozenset({".env"})
+
 _README_MAX_CHARS = 500
+
+_README_CANDIDATES: tuple[str, ...] = (
+    "README.md", "README.rst", "README.txt", "README",
+)
 
 
 def detect_project_configs(root: Path) -> list[str]:
@@ -34,9 +41,30 @@ def detect_project_configs(root: Path) -> list[str]:
     return [name for name in _CONFIG_FILES if (root / name).is_file()]
 
 
+def get_config_file_paths(root: Path) -> list[Path]:
+    """Return paths of detected config files (excluding sensitive ones)."""
+    return [
+        root / name
+        for name in _CONFIG_FILES
+        if (root / name).is_file() and name not in _SENSITIVE_CONFIG_FILES
+    ]
+
+
+def get_readme_content(root: Path) -> str | None:
+    """Read the full README file content, or return None."""
+    for candidate in _README_CANDIDATES:
+        readme = root / candidate
+        if readme.is_file():
+            try:
+                return readme.read_text(encoding="utf-8")
+            except OSError:
+                return None
+    return None
+
+
 def get_readme_summary(root: Path) -> str | None:
     """Read the first 500 characters of a README file, or return None."""
-    for candidate in ("README.md", "README.rst", "README.txt", "README"):
+    for candidate in _README_CANDIDATES:
         readme = root / candidate
         if readme.is_file():
             try:
@@ -47,16 +75,29 @@ def get_readme_summary(root: Path) -> str | None:
     return None
 
 
-def get_config_context(root: Path) -> str:
-    """Combine config detection and README summary into a context block."""
+def get_config_context(root: Path, *, read_full_readme: bool = False) -> str:
+    """Combine config detection and README summary into a context block.
+
+    Parameters
+    ----------
+    root:
+        Project root directory.
+    read_full_readme:
+        If True, include the full README content instead of a 500-char excerpt.
+    """
     parts: list[str] = []
 
     configs = detect_project_configs(root)
     if configs:
         parts.append("**Config files:** " + ", ".join(f"`{c}`" for c in configs))
 
-    readme = get_readme_summary(root)
-    if readme:
-        parts.append(f"**README (excerpt):**\n```\n{readme}\n```")
+    if read_full_readme:
+        readme = get_readme_content(root)
+        if readme:
+            parts.append(f"**README:**\n```\n{readme}\n```")
+    else:
+        readme = get_readme_summary(root)
+        if readme:
+            parts.append(f"**README (excerpt):**\n```\n{readme}\n```")
 
     return "\n\n".join(parts)

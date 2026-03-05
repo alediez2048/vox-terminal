@@ -5,13 +5,16 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from vox_terminal.config import GeneralSettings, MCPSettings
+from vox_terminal.config import ContextSettings, GeneralSettings, MCPSettings
 from vox_terminal.context import ContextAssembler
 from vox_terminal.context.sources.configs import (
     detect_project_configs,
     get_config_context,
+    get_config_file_paths,
+    get_readme_content,
     get_readme_summary,
 )
+from vox_terminal.context.sources.files import get_file_contents, resolve_file_patterns
 from vox_terminal.context.sources.git import (
     get_git_branch,
     get_git_context,
@@ -181,6 +184,116 @@ class TestConfigSource:
         assert "`pyproject.toml`" in ctx
         assert "README" in ctx
 
+    def test_get_config_context_full_readme(self, tmp_path: Path) -> None:
+        long_text = "# Title\n" + "x" * 1000
+        (tmp_path / "README.md").write_text(long_text)
+        ctx = get_config_context(tmp_path, read_full_readme=True)
+        assert "**README:**" in ctx
+        assert "x" * 1000 in ctx
+
+    def test_get_config_context_excerpt_readme(self, tmp_path: Path) -> None:
+        long_text = "x" * 1000
+        (tmp_path / "README.md").write_text(long_text)
+        ctx = get_config_context(tmp_path, read_full_readme=False)
+        assert "(excerpt)" in ctx
+
+    def test_readme_content_full(self, tmp_path: Path) -> None:
+        full = "# Hello\n" + "content " * 200
+        (tmp_path / "README.md").write_text(full)
+        result = get_readme_content(tmp_path)
+        assert result == full
+
+    def test_readme_content_none(self, tmp_path: Path) -> None:
+        assert get_readme_content(tmp_path) is None
+
+    def test_config_file_paths_excludes_env(self, tmp_path: Path) -> None:
+        (tmp_path / "pyproject.toml").write_text("[project]\n")
+        (tmp_path / ".env").write_text("SECRET=123\n")
+        paths = get_config_file_paths(tmp_path)
+        names = [p.name for p in paths]
+        assert "pyproject.toml" in names
+        assert ".env" not in names
+
+
+# ---------------------------------------------------------------------------
+# File source tests
+# ---------------------------------------------------------------------------
+
+class TestFileSource:
+    def test_resolve_glob_patterns(self, tmp_path: Path) -> None:
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "main.py").write_text("print('hi')\n")
+        (tmp_path / "src" / "util.py").write_text("pass\n")
+        (tmp_path / "readme.txt").write_text("hello\n")
+        paths = resolve_file_patterns(tmp_path, ["src/*.py"])
+        names = [p.name for p in paths]
+        assert "main.py" in names
+        assert "util.py" in names
+        assert "readme.txt" not in names
+
+    def test_resolve_exact_filename(self, tmp_path: Path) -> None:
+        (tmp_path / "config.toml").write_text("[x]\n")
+        paths = resolve_file_patterns(tmp_path, ["config.toml"])
+        assert len(paths) == 1
+        assert paths[0].name == "config.toml"
+
+    def test_resolve_missing_pattern(self, tmp_path: Path) -> None:
+        paths = resolve_file_patterns(tmp_path, ["nonexistent.py"])
+        assert paths == []
+
+    def test_resolve_deduplicates(self, tmp_path: Path) -> None:
+        (tmp_path / "a.py").write_text("a\n")
+        paths = resolve_file_patterns(tmp_path, ["a.py", "*.py"])
+        assert len(paths) == 1
+
+    def test_get_file_contents_basic(self, tmp_path: Path) -> None:
+        (tmp_path / "hello.py").write_text("print('hello')\n")
+        result = get_file_contents(tmp_path, [tmp_path / "hello.py"])
+        assert "**`hello.py`**" in result
+        assert "print('hello')" in result
+
+    def test_get_file_contents_skips_binary(self, tmp_path: Path) -> None:
+        (tmp_path / "image.png").write_bytes(b"\x89PNG\r\n")
+        result = get_file_contents(tmp_path, [tmp_path / "image.png"])
+        assert result == ""
+
+    def test_get_file_contents_skips_sensitive(self, tmp_path: Path) -> None:
+        (tmp_path / ".env").write_text("SECRET=abc\n")
+        result = get_file_contents(tmp_path, [tmp_path / ".env"])
+        assert result == ""
+
+    def test_get_file_contents_skips_large(self, tmp_path: Path) -> None:
+        (tmp_path / "big.txt").write_text("x" * 100_000)
+        result = get_file_contents(
+            tmp_path, [tmp_path / "big.txt"], max_file_size=1000,
+        )
+        assert result == ""
+
+    def test_get_file_contents_respects_total_budget(self, tmp_path: Path) -> None:
+        (tmp_path / "a.txt").write_text("a" * 100)
+        (tmp_path / "b.txt").write_text("b" * 100)
+        result = get_file_contents(
+            tmp_path,
+            [tmp_path / "a.txt", tmp_path / "b.txt"],
+            max_total_chars=150,
+        )
+        assert "a" * 100 in result
+        # b.txt should be trimmed or partial
+        assert "b" * 100 not in result
+
+    def test_get_file_contents_multiple(self, tmp_path: Path) -> None:
+        (tmp_path / "x.py").write_text("x_content\n")
+        (tmp_path / "y.py").write_text("y_content\n")
+        result = get_file_contents(
+            tmp_path, [tmp_path / "x.py", tmp_path / "y.py"],
+        )
+        assert "x_content" in result
+        assert "y_content" in result
+
+    def test_get_file_contents_missing_file(self, tmp_path: Path) -> None:
+        result = get_file_contents(tmp_path, [tmp_path / "gone.txt"])
+        assert result == ""
+
 
 # ---------------------------------------------------------------------------
 # Assembler tests
@@ -241,3 +354,74 @@ class TestContextAssembler:
         assembler = ContextAssembler()
         assert assembler.tree_depth == 3
         assert assembler.project_root == Path.cwd()
+
+    def test_assemble_reads_config_contents(self, tmp_path: Path) -> None:
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'test'\n")
+        general = GeneralSettings(project_root=tmp_path)
+        ctx_settings = ContextSettings(
+            read_config_files=True,
+            read_full_readme=False,
+            doc_patterns=[],
+        )
+        assembler = ContextAssembler(
+            general=general, context_settings=ctx_settings,
+        )
+        result = assembler.assemble(include_git=False, include_tree=False)
+        assert "## Config file contents" in result
+        assert "name = 'test'" in result
+
+    def test_assemble_reads_doc_files(self, tmp_path: Path) -> None:
+        (tmp_path / "CHANGELOG.md").write_text("## v1.0\n- Initial release\n")
+        general = GeneralSettings(project_root=tmp_path)
+        ctx_settings = ContextSettings(
+            read_config_files=False,
+            doc_patterns=["CHANGELOG.md"],
+        )
+        assembler = ContextAssembler(
+            general=general, context_settings=ctx_settings,
+        )
+        result = assembler.assemble(include_git=False, include_tree=False)
+        assert "## Documentation" in result
+        assert "Initial release" in result
+
+    def test_assemble_reads_user_files(self, tmp_path: Path) -> None:
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "app.py").write_text("def main(): pass\n")
+        general = GeneralSettings(project_root=tmp_path)
+        ctx_settings = ContextSettings(
+            read_config_files=False,
+            doc_patterns=[],
+            include_files=["src/*.py"],
+        )
+        assembler = ContextAssembler(
+            general=general, context_settings=ctx_settings,
+        )
+        result = assembler.assemble(include_git=False, include_tree=False)
+        assert "## Project files" in result
+        assert "def main(): pass" in result
+
+    def test_assemble_backward_compat(self, tmp_path: Path) -> None:
+        """ContextAssembler works without context_settings (backward compat)."""
+        (tmp_path / "pyproject.toml").write_text("[project]\n")
+        (tmp_path / "README.md").write_text("# Test\n")
+        general = GeneralSettings(project_root=tmp_path)
+        assembler = ContextAssembler(general=general)
+        result = assembler.assemble(include_git=False, include_tree=False)
+        assert "## Project info" in result
+
+    def test_assemble_respects_budget(self, tmp_path: Path) -> None:
+        (tmp_path / "big.py").write_text("x" * 500)
+        general = GeneralSettings(project_root=tmp_path)
+        ctx_settings = ContextSettings(
+            read_config_files=False,
+            doc_patterns=[],
+            include_files=["big.py"],
+            max_context_chars=100,
+        )
+        assembler = ContextAssembler(
+            general=general, context_settings=ctx_settings,
+        )
+        result = assembler.assemble(include_git=False, include_tree=False)
+        # File content should be truncated to budget
+        if "## Project files" in result:
+            assert "x" * 500 not in result

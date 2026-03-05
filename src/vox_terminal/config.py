@@ -66,6 +66,27 @@ class TTSSettings(BaseModel):
     elevenlabs_output_format: str = "mp3_44100_128"
 
 
+class ContextSettings(BaseModel):
+    """Settings for project context assembly."""
+
+    include_files: list[str] = Field(default_factory=list)
+    max_file_size: int = 50_000
+    max_context_chars: int = 200_000
+    read_config_files: bool = True
+    read_full_readme: bool = True
+    doc_patterns: list[str] = Field(
+        default_factory=lambda: [
+            "DEVLOG.md",
+            "CHANGELOG.md",
+            "CONTRIBUTING.md",
+            "ARCHITECTURE.md",
+            "CLAUDE.md",
+            "AGENTS.md",
+            "docs/*.md",
+        ]
+    )
+
+
 class MCPSettings(BaseModel):
     """MCP server settings."""
 
@@ -91,6 +112,7 @@ class VoxTerminalSettings(BaseSettings):
     llm: LLMSettings = Field(default_factory=LLMSettings)
     tts: TTSSettings = Field(default_factory=TTSSettings)
     mcp: MCPSettings = Field(default_factory=MCPSettings)
+    context: ContextSettings = Field(default_factory=ContextSettings)
 
 
 def load_settings(**overrides: object) -> VoxTerminalSettings:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import time as _time
 from typing import Any
 
@@ -54,6 +55,8 @@ class AudioCapture:
         self._done_event: asyncio.Event | None = None
         self._speech_started_event: asyncio.Event | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._audio_level_lock = threading.Lock()
+        self._current_audio_level: float = 0.0
 
     # ------------------------------------------------------------------
     # Properties
@@ -76,6 +79,12 @@ class AudioCapture:
     def speech_started(self) -> asyncio.Event | None:
         """Event that is set when speech is first detected during recording."""
         return self._speech_started_event
+
+    @property
+    def audio_level(self) -> float:
+        """Current audio level (0.0-1.0), updated from the VAD callback."""
+        with self._audio_level_lock:
+            return self._current_audio_level
 
     # ------------------------------------------------------------------
     # Push-to-talk recording
@@ -196,9 +205,14 @@ class AudioCapture:
         if self._vad is not None:
             result = self._vad.is_speech(indata, self._sample_rate)
             is_speech = result.is_speech
+            level = result.confidence
         else:
             rms = float(np.sqrt(np.mean(indata**2)))
             is_speech = rms > self._silence_threshold
+            level = min(1.0, rms * 10.0)  # scale RMS to 0-1 range
+
+        with self._audio_level_lock:
+            self._current_audio_level = level
 
         if is_speech:
             # User is speaking

@@ -19,6 +19,7 @@ from vox_terminal.llm.base import LLMClient
 from vox_terminal.stt import create_stt_engine
 from vox_terminal.tts import create_tts_engine
 from vox_terminal.tts.base import TTSEngine
+from vox_terminal.tui.state import DisplayState
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,7 @@ async def _ask_and_speak(
     llm: LLMClient,
     tts: TTSEngine,
     history: list[Message] | None = None,
+    display_state: DisplayState | None = None,
 ) -> str:
     """Stream an LLM response for *question* and speak it via TTS.
 
@@ -81,9 +83,15 @@ async def _ask_and_speak(
     async def _collecting_tee(stream: AsyncIterator[str]) -> AsyncIterator[str]:
         async for chunk in stream:
             chunks.append(chunk)
-            console.print(chunk, end="", highlight=False)
+            if display_state is not None:
+                display_state.response_chunks.append(chunk)
+            else:
+                console.print(chunk, end="", highlight=False)
             yield chunk
-        console.print()
+        if display_state is None:
+            console.print()
+        if display_state is not None:
+            display_state.phase = "speaking"
 
     try:
         stream = llm.stream(question, history=history or None)
@@ -127,7 +135,9 @@ async def _ask_once(
     history: list[Message] | None = None,
 ) -> str:
     """Ask a single question: context → LLM stream → TTS."""
-    assembler = ContextAssembler(settings.general, settings.mcp)
+    assembler = ContextAssembler(
+        settings.general, settings.mcp, context_settings=settings.context,
+    )
     context = assembler.assemble(
         include_git=settings.mcp.include_git,
         include_tree=settings.mcp.include_tree,
@@ -145,6 +155,7 @@ async def _ask_once(
 async def _interactive_loop(settings: VoxTerminalSettings) -> None:
     """Main interactive voice loop: record → transcribe → ask → speak."""
     from vox_terminal.audio_capture import AudioCapture, AudioCaptureError
+    from vox_terminal.tui.display import SessionDisplay
     from vox_terminal.vad import create_vad_engine
 
     tts = create_tts_engine(settings.tts)
@@ -152,6 +163,7 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
     # Try to set up audio capture, fall back to text input
     use_voice = True
     stt = None
+    capture = None
     try:
         vad = create_vad_engine(
             engine=settings.stt.vad_engine,
@@ -168,6 +180,10 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
     except OSError as exc:
         use_voice = False
         console.print(f"[yellow]Audio device error ({exc}) — using text input.[/yellow]")
+
+    # -- TUI display setup ---------------------------------------------------
+    display_state = DisplayState(model_name=settings.llm.model)
+    display = SessionDisplay(display_state, console=console)
 
     console.print(
         Panel(
@@ -193,7 +209,9 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
     loop = asyncio.get_running_loop()
 
     async def _assemble_context() -> str:
-        assembler = ContextAssembler(settings.general, settings.mcp)
+        assembler = ContextAssembler(
+            settings.general, settings.mcp, context_settings=settings.context,
+        )
         return await loop.run_in_executor(
             None,
             lambda: assembler.assemble(
@@ -241,10 +259,13 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
     mic_errors = 0
     max_mic_errors = 3
 
+    # Start the TUI display
+    await display.start(capture=capture if use_voice else None)
+
     while True:
         try:
             if use_voice:
-                console.print("\n[green]● Listening...[/green]")
+                display_state.phase = "listening"
                 try:
                     audio = await capture.record_until_silence(
                         silence_threshold=settings.stt.silence_threshold,
@@ -254,9 +275,9 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
                     mic_errors = 0  # reset on success
                 except AudioCaptureError as exc:
                     mic_errors += 1
-                    console.print(f"[red]Recording error:[/red] {exc}")
+                    display.print_static(f"[red]Recording error:[/red] {exc}")
                     if mic_errors >= max_mic_errors:
-                        console.print(
+                        display.print_static(
                             "[yellow]Microphone failed repeatedly — "
                             "falling back to text input.[/yellow]\n"
                             "[dim]Tip: Check System Settings → Privacy & Security "
@@ -268,9 +289,9 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
                     continue
                 except OSError as exc:
                     mic_errors += 1
-                    console.print(f"[red]Audio device error:[/red] {exc}")
+                    display.print_static(f"[red]Audio device error:[/red] {exc}")
                     if mic_errors >= max_mic_errors:
-                        console.print(
+                        display.print_static(
                             "[yellow]Microphone failed repeatedly — "
                             "falling back to text input.[/yellow]"
                         )
@@ -280,27 +301,31 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
                     continue
 
                 if audio.size == 0:
-                    console.print("[yellow]No audio captured.[/yellow]")
+                    display.print_static("[yellow]No audio captured.[/yellow]")
                     continue
 
-                console.print("[dim]Transcribing...[/dim]")
+                display_state.phase = "transcribing"
                 result = await stt.transcribe(audio, settings.stt.sample_rate)
                 question = result.text.strip()
                 if not question:
-                    console.print("[yellow]Could not transcribe audio.[/yellow]")
+                    display.print_static("[yellow]Could not transcribe audio.[/yellow]")
                     continue
             else:
+                display.pause()
                 question = input("\n> ").strip()
+                display.resume()
 
             if question.lower() in ("q", "quit", "exit"):
-                console.print("[dim]Goodbye![/dim]")
+                display.print_static("[dim]Goodbye![/dim]")
                 break
 
             if not question:
                 continue
 
-            console.print(f"\n[bold cyan]You:[/bold cyan] {question}")
-            console.print("[bold green]Vox-Terminal:[/bold green] ", end="")
+            display_state.question = question
+            display_state.response_chunks.clear()
+            display_state.phase = "thinking"
+            display_state.turn_start = _time.monotonic()
 
             # --- TTS playback (with optional barge-in) ---
             interrupted_audio = None
@@ -321,7 +346,7 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
                 ) -> str:
                     """Run TTS while watching for speech on the mic."""
                     tts_task = asyncio.create_task(
-                        _ask_and_speak(q, llm, tts, h)
+                        _ask_and_speak(q, llm, tts, h, display_state=display_state)
                     )
 
                     speech_event = capture.speech_started
@@ -353,7 +378,9 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
 
                 if capture.speech_started and capture.speech_started.is_set():
                     # User interrupted — finish recording their speech
-                    console.print("\n[dim](interrupted)[/dim]")
+                    display.print_static("[dim](interrupted)[/dim]")
+                    display_state.phase = "listening"
+                    display_state.response_chunks.clear()
                     try:
                         interrupted_audio = await asyncio.wait_for(
                             record_task, timeout=5.0
@@ -377,9 +404,12 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
                                 await record_task
             else:
                 # Default path: no barge-in, TTS plays fully
-                response_text = await _ask_and_speak(question, llm, tts, history or None)
+                response_text = await _ask_and_speak(
+                    question, llm, tts, history or None, display_state=display_state,
+                )
 
             # Update history + persist
+            display_state.phase = "idle"
             if response_text:
                 history.append(Message(role="user", content=question))
                 history.append(Message(role="assistant", content=response_text))
@@ -388,22 +418,26 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
                     store.add_message(session_id, "assistant", response_text)
                 if len(history) > max_history:
                     history = history[-max_history:]
+                display_state.history_count = len(history) // 2
 
             # If user interrupted via barge-in, process their speech immediately
             if interrupted_audio is not None and interrupted_audio.size > 0:
-                console.print("[dim]Transcribing...[/dim]")
+                display_state.phase = "transcribing"
                 result = await stt.transcribe(
                     interrupted_audio, settings.stt.sample_rate
                 )
                 question = result.text.strip()
                 if question and question.lower() not in ("q", "quit", "exit"):
-                    console.print(f"\n[bold cyan]You:[/bold cyan] {question}")
-                    console.print("[bold green]Vox-Terminal:[/bold green] ", end="")
+                    display_state.question = question
+                    display_state.response_chunks.clear()
+                    display_state.phase = "thinking"
 
                     response_text = await _ask_and_speak(
-                        question, llm, tts, history or None
+                        question, llm, tts, history or None,
+                        display_state=display_state,
                     )
 
+                    display_state.phase = "idle"
                     if response_text:
                         history.append(Message(role="user", content=question))
                         history.append(
@@ -414,17 +448,19 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
                             store.add_message(session_id, "assistant", response_text)
                         if len(history) > max_history:
                             history = history[-max_history:]
+                        display_state.history_count = len(history) // 2
                 elif question and question.lower() in ("q", "quit", "exit"):
-                    console.print("[dim]Goodbye![/dim]")
+                    display.print_static("[dim]Goodbye![/dim]")
                     break
 
         except KeyboardInterrupt:
-            console.print("\n[dim]Goodbye![/dim]")
+            display.print_static("\n[dim]Goodbye![/dim]")
             break
         except EOFError:
             break
 
-    # Clean up memory store
+    # Clean up display + memory store
+    await display.stop()
     if store is not None:
         store.close()
 
@@ -466,7 +502,9 @@ def context(
 ) -> None:
     """Show the project context that would be sent to the LLM."""
     settings = load_settings()
-    assembler = ContextAssembler(settings.general, settings.mcp)
+    assembler = ContextAssembler(
+        settings.general, settings.mcp, context_settings=settings.context,
+    )
     ctx = assembler.assemble(
         include_git=settings.mcp.include_git,
         include_tree=settings.mcp.include_tree,
