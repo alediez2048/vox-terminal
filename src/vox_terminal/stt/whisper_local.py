@@ -64,10 +64,24 @@ class WhisperLocalSTT(STTEngine):
         if self._model is None:
             self._model = self._load_model()
 
+        beam_size = self._settings.whisper_beam_size
+        if self._settings.whisper_profile == "conversational":
+            beam_size = min(beam_size, 2)
+        elif self._settings.whisper_profile == "balanced":
+            beam_size = min(beam_size, 3)
+        elif self._settings.whisper_profile == "accurate":
+            beam_size = max(beam_size, 5)
+
+        logger.info(
+            "Whisper transcription started (profile=%s, beam_size=%d)",
+            self._settings.whisper_profile,
+            beam_size,
+        )
+
         loop = asyncio.get_event_loop()
         segments, info = await loop.run_in_executor(
             None,
-            lambda: self._model.transcribe(audio, beam_size=5),
+            lambda: self._model.transcribe(audio, beam_size=beam_size),
         )
 
         # Materialise segments (they are a generator)

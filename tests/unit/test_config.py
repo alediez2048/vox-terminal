@@ -27,6 +27,10 @@ class TestGeneralSettings:
         assert s.log_rotate_max_bytes == 5_000_000
         assert s.log_rotate_backup_count == 3
         assert s.barge_in_enabled is False
+        assert s.barge_in_grace_min_seconds == 0.35
+        assert s.barge_in_grace_max_seconds == 0.9
+        assert s.barge_in_required_hits == 3
+        assert s.barge_in_poll_interval_ms == 30
 
     def test_custom(self, tmp_path: Path) -> None:
         s = GeneralSettings(
@@ -37,6 +41,10 @@ class TestGeneralSettings:
             log_file=tmp_path / "vox.log",
             log_rotate_max_bytes=1_024,
             log_rotate_backup_count=2,
+            barge_in_grace_min_seconds=0.2,
+            barge_in_grace_max_seconds=0.7,
+            barge_in_required_hits=2,
+            barge_in_poll_interval_ms=20,
         )
         assert s.project_root == tmp_path
         assert s.verbose is True
@@ -44,6 +52,10 @@ class TestGeneralSettings:
         assert s.log_file == tmp_path / "vox.log"
         assert s.log_rotate_max_bytes == 1_024
         assert s.log_rotate_backup_count == 2
+        assert s.barge_in_grace_min_seconds == 0.2
+        assert s.barge_in_grace_max_seconds == 0.7
+        assert s.barge_in_required_hits == 2
+        assert s.barge_in_poll_interval_ms == 20
 
 
 class TestSTTSettings:
@@ -51,7 +63,12 @@ class TestSTTSettings:
         s = STTSettings()
         assert s.engine == "whisper_local"
         assert s.whisper_model == "base.en"
+        assert s.whisper_profile == "conversational"
+        assert s.whisper_beam_size == 3
         assert s.sample_rate == 16000
+        assert s.silence_duration == 0.7
+        assert s.silence_duration_after_speech == 0.5
+        assert s.adaptive_endpointing is True
 
 
 class TestLLMSettings:
@@ -87,6 +104,9 @@ class TestContextSettings:
         assert s.enabled_sources == []
         assert s.max_file_size == 50_000
         assert s.max_context_chars == 200_000
+        assert s.interactive_compact_context is True
+        assert s.interactive_max_context_chars == 60_000
+        assert s.interactive_enabled_sources == ["project_info", "git", "tree"]
         assert s.read_config_files is True
         assert s.read_full_readme is True
         assert s.skip_network_sources is False
@@ -99,6 +119,9 @@ class TestContextSettings:
             enabled_sources=["project_info", "git"],
             max_file_size=10_000,
             max_context_chars=50_000,
+            interactive_compact_context=False,
+            interactive_max_context_chars=20_000,
+            interactive_enabled_sources=["project_info"],
             read_config_files=False,
             read_full_readme=False,
             skip_network_sources=True,
@@ -108,6 +131,9 @@ class TestContextSettings:
         assert s.enabled_sources == ["project_info", "git"]
         assert s.max_file_size == 10_000
         assert s.max_context_chars == 50_000
+        assert s.interactive_compact_context is False
+        assert s.interactive_max_context_chars == 20_000
+        assert s.interactive_enabled_sources == ["project_info"]
         assert s.read_config_files is False
         assert s.read_full_readme is False
         assert s.skip_network_sources is True

@@ -87,6 +87,44 @@ class TestWhisperLocalSTT:
         assert result.text == ""
         assert result.confidence is None
 
+    async def test_transcribe_conversational_profile_caps_beam_size(self) -> None:
+        settings = STTSettings(whisper_profile="conversational", whisper_beam_size=6)
+        engine = WhisperLocalSTT(settings)
+
+        seg = MagicMock()
+        seg.text = " hi "
+        seg.avg_logprob = -0.2
+        info = MagicMock()
+        info.language = "en"
+
+        fake_model = MagicMock()
+        fake_model.transcribe.return_value = ([seg], info)
+
+        with patch.object(engine, "_load_model", return_value=fake_model):
+            audio = np.zeros(4000, dtype=np.float32)
+            await engine.transcribe(audio)
+
+        assert fake_model.transcribe.call_args.kwargs["beam_size"] == 2
+
+    async def test_transcribe_accurate_profile_uses_higher_beam_size(self) -> None:
+        settings = STTSettings(whisper_profile="accurate", whisper_beam_size=2)
+        engine = WhisperLocalSTT(settings)
+
+        seg = MagicMock()
+        seg.text = " hi "
+        seg.avg_logprob = -0.2
+        info = MagicMock()
+        info.language = "en"
+
+        fake_model = MagicMock()
+        fake_model.transcribe.return_value = ([seg], info)
+
+        with patch.object(engine, "_load_model", return_value=fake_model):
+            audio = np.zeros(4000, dtype=np.float32)
+            await engine.transcribe(audio)
+
+        assert fake_model.transcribe.call_args.kwargs["beam_size"] == 5
+
 
 # ------------------------------------------------------------------
 # OpenAISTT

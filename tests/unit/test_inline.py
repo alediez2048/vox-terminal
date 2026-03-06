@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from vox_terminal.context.sources.inline import (
     extract_file_references,
     inject_file_context,
@@ -87,6 +85,23 @@ class TestResolveAndReadFiles:
         result = resolve_and_read_files(project_root, ["README.md"])
         assert "[File: README.md]" in result
         assert "Test Project" in result
+
+    def test_bare_filename_lookup_is_constrained_to_fast_roots(
+        self, project_root: Path
+    ) -> None:
+        (project_root / "vendor").mkdir()
+        (project_root / "vendor" / "secret.py").write_text("SECRET = 1\n")
+        result = resolve_and_read_files(project_root, ["secret.py"])
+        assert result == ""
+
+    def test_explicit_path_still_resolves_outside_fast_roots(
+        self, project_root: Path
+    ) -> None:
+        (project_root / "vendor").mkdir()
+        (project_root / "vendor" / "secret.py").write_text("SECRET = 1\n")
+        result = resolve_and_read_files(project_root, ["vendor/secret.py"])
+        assert "[File: vendor/secret.py]" in result
+        assert "SECRET = 1" in result
 
 
 class TestInjectFileContext:

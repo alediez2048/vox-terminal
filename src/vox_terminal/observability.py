@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import time as _time
 import uuid
 from contextvars import ContextVar, Token
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 _TURN_ID: ContextVar[str | None] = ContextVar("vox_terminal_turn_id", default=None)
 
@@ -43,3 +44,35 @@ class TurnContext:
     def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
         if self._token is not None:
             _TURN_ID.reset(self._token)
+
+
+@dataclass(slots=True)
+class TurnWaterfall:
+    """Collect per-turn stage timestamps and expose elapsed milliseconds."""
+
+    start_monotonic: float = field(default_factory=_time.monotonic)
+    _marks: dict[str, float] = field(default_factory=dict)
+
+    def mark(self, name: str, *, at: float | None = None, overwrite: bool = False) -> None:
+        """Record a stage timestamp.
+
+        By default, the first value wins for a mark name unless ``overwrite`` is
+        explicitly set.
+        """
+        if not overwrite and name in self._marks:
+            return
+        self._marks[name] = at if at is not None else _time.monotonic()
+
+    def elapsed_ms(self, name: str) -> float | None:
+        """Return elapsed milliseconds from turn start for ``name``."""
+        mark = self._marks.get(name)
+        if mark is None:
+            return None
+        return (mark - self.start_monotonic) * 1000
+
+    def snapshot_ms(self) -> dict[str, float]:
+        """Return all recorded marks as elapsed milliseconds."""
+        return {
+            name: round((mark - self.start_monotonic) * 1000, 1)
+            for name, mark in self._marks.items()
+        }

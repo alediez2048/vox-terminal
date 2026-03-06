@@ -79,13 +79,27 @@ class ContextAssembler:
             if ctx.skip_network_sources and source.requires_network:
                 logger.debug("Skipping network source in offline mode: %s", source.name)
                 continue
+            source_t0 = _time.monotonic()
             try:
                 fragment = source.gather(root)
             except Exception:
                 logger.exception("Context source failed: %s", source.name)
                 continue
+            elapsed_ms = (_time.monotonic() - source_t0) * 1000
             if fragment and fragment.content:
+                logger.info(
+                    "Context source gathered (source=%s, chars=%d, elapsed_ms=%.0f)",
+                    source.name,
+                    len(fragment.content),
+                    elapsed_ms,
+                )
                 fragments.append(fragment)
+            else:
+                logger.info(
+                    "Context source empty (source=%s, elapsed_ms=%.0f)",
+                    source.name,
+                    elapsed_ms,
+                )
 
         # Allocate budget greedily from highest to lowest priority.
         sections: list[str] = []
@@ -93,6 +107,13 @@ class ContextAssembler:
             allocated = budget.allocate(fragment)
             if allocated:
                 sections.append(allocated)
+            logger.info(
+                "Context source budget allocation (source=%s, priority=%d, input_chars=%d, output_chars=%d)",
+                fragment.name,
+                fragment.priority,
+                len(fragment.content),
+                len(allocated),
+            )
 
         if not sections:
             logger.debug("No context assembled for %s", root)

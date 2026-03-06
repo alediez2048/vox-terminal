@@ -4,7 +4,14 @@ from __future__ import annotations
 
 import asyncio
 
-from vox_terminal.observability import TurnContext, generate_turn_id, get_current_turn_id
+import pytest
+
+from vox_terminal.observability import (
+    TurnContext,
+    TurnWaterfall,
+    generate_turn_id,
+    get_current_turn_id,
+)
 
 
 class TestGenerateTurnID:
@@ -35,3 +42,19 @@ class TestTurnContext:
         with TurnContext("task-turn-id"):
             task = asyncio.create_task(_read_turn_id())
             assert await task == "task-turn-id"
+
+
+class TestTurnWaterfall:
+    def test_mark_and_snapshot(self) -> None:
+        waterfall = TurnWaterfall(start_monotonic=100.0)
+        waterfall.mark("stt_start_ms", at=100.05)
+        waterfall.mark("stt_end_ms", at=100.2)
+        snapshot = waterfall.snapshot_ms()
+        assert snapshot["stt_start_ms"] == 50.0
+        assert snapshot["stt_end_ms"] == 200.0
+
+    def test_first_value_wins_without_overwrite(self) -> None:
+        waterfall = TurnWaterfall(start_monotonic=1.0)
+        waterfall.mark("llm_first_token_ms", at=1.2)
+        waterfall.mark("llm_first_token_ms", at=1.4)
+        assert waterfall.elapsed_ms("llm_first_token_ms") == pytest.approx(200.0)
