@@ -47,10 +47,15 @@ class AudioCapture:
 
         # VAD state (used by record_until_silence)
         self._speech_detected = False
+        self._speech_started_at: float | None = None
         self._silence_start: float | None = None
         self._recording_start: float = 0.0
         self._silence_threshold: float = 0.01
         self._silence_duration: float = 1.5
+        self._silence_duration_after_speech: float = 0.5
+        self._adaptive_endpointing: bool = True
+        self._speech_start_threshold: float | None = None
+        self._speech_end_threshold: float | None = None
         self._max_duration: float = 30.0
         self._done_event: asyncio.Event | None = None
         self._speech_started_event: asyncio.Event | None = None
@@ -79,6 +84,11 @@ class AudioCapture:
     def speech_started(self) -> asyncio.Event | None:
         """Event that is set when speech is first detected during recording."""
         return self._speech_started_event
+
+    @property
+    def last_speech_started_at(self) -> float | None:
+        """Monotonic timestamp when speech was first detected for latest recording."""
+        return self._speech_started_at
 
     @property
     def audio_level(self) -> float:
@@ -123,7 +133,11 @@ class AudioCapture:
     async def record_until_silence(
         self,
         silence_threshold: float = 0.01,
-        silence_duration: float = 1.5,
+        silence_duration: float = 0.7,
+        silence_duration_after_speech: float = 0.5,
+        adaptive_endpointing: bool = True,
+        speech_start_threshold: float | None = None,
+        speech_end_threshold: float | None = None,
         max_duration: float = 30.0,
     ) -> np.ndarray:
         """Record audio and auto-stop after silence following speech.
@@ -139,10 +153,15 @@ class AudioCapture:
             raise AudioCaptureError("sounddevice is not available — cannot record audio")
 
         self._speech_detected = False
+        self._speech_started_at = None
         self._silence_start = None
         self._recording_start = _time.monotonic()
         self._silence_threshold = silence_threshold
         self._silence_duration = silence_duration
+        self._silence_duration_after_speech = silence_duration_after_speech
+        self._adaptive_endpointing = adaptive_endpointing
+        self._speech_start_threshold = speech_start_threshold
+        self._speech_end_threshold = speech_end_threshold
         self._max_duration = max_duration
         self._done_event = asyncio.Event()
         self._speech_started_event = asyncio.Event()
@@ -157,9 +176,11 @@ class AudioCapture:
         )
         self._stream.start()
         logger.debug(
-            "Hands-free recording started (threshold=%.4f, silence=%.1fs)",
+            "Hands-free recording started (threshold=%.4f, silence=%.1fs, post_speech_silence=%.1fs, adaptive=%s)",
             silence_threshold,
             silence_duration,
+            silence_duration_after_speech,
+            adaptive_endpointing,
         )
 
         await self._done_event.wait()
@@ -213,7 +234,8 @@ class AudioCapture:
                 level = min(1.0, rms * 10.0)
         else:
             rms = float(np.sqrt(np.mean(indata**2)))
-            is_speech = rms > self._silence_threshold
+            threshold = self._resolve_energy_threshold()
+            is_speech = rms > threshold
             level = min(1.0, rms * 10.0)  # scale RMS to 0-1 range
 
         with self._audio_level_lock:
@@ -223,6 +245,7 @@ class AudioCapture:
             # User is speaking
             if not self._speech_detected:
                 self._speech_detected = True
+                self._speech_started_at = now
                 if self._loop is not None and self._speech_started_event is not None:
                     self._loop.call_soon_threadsafe(self._speech_started_event.set)
             self._silence_start = None
@@ -230,8 +253,31 @@ class AudioCapture:
             # User was speaking but now it's quiet
             if self._silence_start is None:
                 self._silence_start = now
-            elif now - self._silence_start >= self._silence_duration:
+            elif now - self._silence_start >= self._resolve_required_silence_duration(now):
                 self._signal_done()
+
+    def _resolve_energy_threshold(self) -> float:
+        """Resolve RMS threshold with optional adaptive start/end values."""
+        if not self._adaptive_endpointing:
+            return self._silence_threshold
+        if self._speech_detected:
+            if self._speech_end_threshold is not None:
+                return self._speech_end_threshold
+            return max(0.001, self._silence_threshold * 0.8)
+        if self._speech_start_threshold is not None:
+            return self._speech_start_threshold
+        return self._silence_threshold
+
+    def _resolve_required_silence_duration(self, now: float) -> float:
+        """Resolve post-utterance silence duration with adaptive hangover."""
+        if not self._adaptive_endpointing:
+            return self._silence_duration
+        if self._speech_started_at is None:
+            return self._silence_duration
+        utterance_duration = now - self._speech_started_at
+        if utterance_duration < 0.5:
+            return self._silence_duration
+        return min(self._silence_duration, self._silence_duration_after_speech)
 
     def cancel_recording(self) -> None:
         """Cancel an in-progress ``record_until_silence`` call."""

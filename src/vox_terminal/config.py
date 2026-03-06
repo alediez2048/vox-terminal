@@ -23,6 +23,10 @@ class GeneralSettings(BaseModel):
     memory_db_path: Path | None = None
     memory_max_messages: int = 40
     barge_in_enabled: bool = False
+    barge_in_grace_min_seconds: float = 0.35
+    barge_in_grace_max_seconds: float = 0.9
+    barge_in_required_hits: int = 3
+    barge_in_poll_interval_ms: int = 30
 
 
 class STTSettings(BaseModel):
@@ -32,10 +36,16 @@ class STTSettings(BaseModel):
     whisper_model: str = "base.en"
     whisper_device: str = "cpu"
     whisper_compute_type: str = "int8"
+    whisper_profile: Literal["conversational", "balanced", "accurate"] = "conversational"
+    whisper_beam_size: int = 3
     sample_rate: int = 16000
     openai_api_key: str = ""
     silence_threshold: float = 0.01
-    silence_duration: float = 1.5
+    speech_start_threshold: float | None = None
+    speech_end_threshold: float | None = None
+    silence_duration: float = 0.7
+    silence_duration_after_speech: float = 0.5
+    adaptive_endpointing: bool = True
     max_record_duration: float = 30.0
     vad_engine: Literal["silero", "energy"] = "silero"
     vad_threshold: float = 0.5
@@ -78,6 +88,11 @@ class ContextSettings(BaseModel):
     enabled_sources: list[str] = Field(default_factory=list)
     max_file_size: int = 50_000
     max_context_chars: int = 200_000
+    interactive_compact_context: bool = True
+    interactive_max_context_chars: int = 60_000
+    interactive_enabled_sources: list[str] = Field(
+        default_factory=lambda: ["project_info", "git", "tree"]
+    )
     read_config_files: bool = True
     read_full_readme: bool = True
     skip_network_sources: bool = False

@@ -10,8 +10,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from typer.testing import CliRunner
 
-from vox_terminal.cli import _ask_and_speak, _ask_once, app
-from vox_terminal.config import VoxTerminalSettings
+from vox_terminal.cli import _ask_and_speak, _ask_once, _build_interactive_context_settings, app
+from vox_terminal.config import ContextSettings, VoxTerminalSettings
 from vox_terminal.llm.base import LLMClient
 from vox_terminal.tts.base import TTSEngine
 from vox_terminal.tui.state import DisplayState
@@ -109,6 +109,38 @@ class TestDiagnoseCommand:
         assert result.exit_code == 1
         assert "FAIL" in result.output
 
+    @patch("vox_terminal.cli._run_diagnostics", new_callable=AsyncMock)
+    def test_diagnose_iterations_prints_summary(self, mock_diag: AsyncMock) -> None:
+        mock_diag.return_value = [
+            ("context", True, "ok", 10.0),
+            ("stt", True, "ok", 8.0),
+            ("llm", True, "ok", 12.0),
+            ("tts", True, "ok", 7.0),
+        ]
+        result = runner.invoke(app, ["diagnose", "--no-audio", "--iterations", "2"])
+        assert result.exit_code == 0
+        assert "Iteration 1/2" in result.output
+        assert "Iteration 2/2" in result.output
+        assert "Benchmark summary" in result.output
+        assert mock_diag.await_count == 2
+
+    @patch("vox_terminal.cli._run_diagnostics", new_callable=AsyncMock)
+    def test_diagnose_passes_mode_flags(self, mock_diag: AsyncMock) -> None:
+        mock_diag.return_value = [
+            ("context", True, "ok", 10.0),
+            ("stt", True, "ok", 10.0),
+            ("llm", True, "ok", 10.0),
+            ("tts", True, "ok", 10.0),
+        ]
+        result = runner.invoke(
+            app,
+            ["diagnose", "--no-audio", "--text-only", "--minimal-context"],
+        )
+        assert result.exit_code == 0
+        call_kwargs = mock_diag.call_args.kwargs
+        assert call_kwargs["text_only"] is True
+        assert call_kwargs["minimal_context"] is True
+
 
 class TestTeeStream:
     async def test_tee_yields_and_prints(self) -> None:
@@ -123,6 +155,34 @@ class TestTeeStream:
             collected.append(chunk)
 
         assert collected == ["Hello ", "world"]
+
+
+class TestInteractiveContextProfile:
+    def test_compact_profile_trims_heavy_sources(self) -> None:
+        base = ContextSettings(
+            interactive_compact_context=True,
+            include_files=["src/**/*.py"],
+            doc_patterns=["README.md"],
+            read_config_files=True,
+            read_full_readme=True,
+        )
+        compact = _build_interactive_context_settings(base)
+        assert compact.read_config_files is False
+        assert compact.read_full_readme is False
+        assert compact.doc_patterns == []
+        assert compact.include_files == []
+
+    def test_compact_profile_can_be_disabled(self) -> None:
+        base = ContextSettings(
+            interactive_compact_context=False,
+            read_config_files=True,
+            read_full_readme=True,
+            doc_patterns=["README.md"],
+        )
+        profile = _build_interactive_context_settings(base)
+        assert profile.read_config_files is True
+        assert profile.read_full_readme is True
+        assert profile.doc_patterns == ["README.md"]
 
 
 class TestAskAndSpeak:

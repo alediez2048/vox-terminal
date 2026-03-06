@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -82,6 +83,42 @@ class TestSpeakStreamed:
         engine = ConcreteTTS()
         await engine.speak_streamed(_async_chunks(["Hel", "lo wor", "ld. Bye."]))
         assert engine.spoken == ["Hello world.", "Bye."]
+
+    async def test_first_flush_can_trigger_on_clause_boundary(self) -> None:
+        engine = ConcreteTTS()
+        await engine.speak_streamed(_async_chunks(["One, two, three."]))
+        assert engine.spoken == ["One,", "two, three."]
+
+    async def test_emits_stream_timing_events(self) -> None:
+        engine = ConcreteTTS()
+        events: list[str] = []
+        await engine.speak_streamed(
+            _async_chunks(["Hello world."]),
+            on_event=lambda name, _at: events.append(name),
+        )
+        assert events[0] == "tts_first_flush_ms"
+        assert events[1] == "tts_first_audio_ms"
+        assert events[-1] == "tts_end_ms"
+
+    async def test_producer_continues_while_consumer_is_speaking(self) -> None:
+        timeline: list[str] = []
+
+        async def timed_chunks() -> AsyncIterator[str]:
+            for idx in range(3):
+                timeline.append(f"yield:{idx}")
+                yield f"Part {idx}."
+
+        class SlowTTS(ConcreteTTS):
+            async def speak(self, text: str) -> None:
+                timeline.append(f"speak_start:{text}")
+                await asyncio.sleep(0.01)
+                timeline.append(f"speak_end:{text}")
+                self.spoken.append(text)
+
+        engine = SlowTTS()
+        await engine.speak_streamed(timed_chunks())
+        # Producer should emit later chunks before all speaks finish.
+        assert timeline.index("yield:1") < timeline.index("speak_end:Part 0.")
 
 
 # ---------------------------------------------------------------------------
@@ -293,7 +330,7 @@ class TestElevenLabsTTS:
 
         async def slow_response() -> AsyncIterator[bytes]:
             nonlocal chunks_delivered
-            for i in range(10):
+            for _i in range(10):
                 if engine._interrupted:
                     break
                 chunks_delivered += 1

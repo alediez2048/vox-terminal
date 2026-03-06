@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time as _time
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -68,11 +69,73 @@ _BINARY_EXTENSIONS: frozenset[str] = frozenset(
 
 _MAX_FILE_SIZE = 50_000  # bytes
 _MAX_INLINE_CHARS = 30_000  # total budget for inline files
+_INDEX_SEARCH_ROOTS: tuple[str, ...] = ("src", "tests", "test", "app", "lib")
+_INDEX_REFRESH_SECONDS = 120.0
+_MAX_INDEXED_FILES = 20_000
+_MAX_INDEX_MATCHES = 5
+
+_FILENAME_INDEX_CACHE: dict[Path, tuple[float, dict[str, list[Path]]]] = {}
 
 
 def extract_file_references(text: str) -> list[str]:
     """Extract potential file path references from a user question."""
     return _FILE_PATTERN.findall(text)
+
+
+def _build_filename_index(project_root: Path) -> dict[str, list[Path]]:
+    """Build a filename -> path index under constrained source roots."""
+    index: dict[str, list[Path]] = {}
+    indexed_files = 0
+
+    def _add(path: Path) -> bool:
+        nonlocal indexed_files
+        if not path.is_file():
+            return True
+        index.setdefault(path.name, []).append(path)
+        indexed_files += 1
+        return indexed_files < _MAX_INDEXED_FILES
+
+    try:
+        for entry in project_root.iterdir():
+            if entry.is_file() and not _add(entry.resolve()):
+                return index
+    except OSError:
+        return index
+
+    for root_name in _INDEX_SEARCH_ROOTS:
+        root = (project_root / root_name).resolve()
+        if not root.is_dir():
+            continue
+        try:
+            for path in root.rglob("*"):
+                if path.is_file() and not _add(path.resolve()):
+                    return index
+        except OSError:
+            continue
+
+    return index
+
+
+def _get_filename_index(project_root: Path) -> dict[str, list[Path]]:
+    """Return cached filename index, refreshing periodically."""
+    root = project_root.resolve()
+    now = _time.monotonic()
+    cached = _FILENAME_INDEX_CACHE.get(root)
+    if cached is not None:
+        cached_at, index = cached
+        if now - cached_at <= _INDEX_REFRESH_SECONDS:
+            return index
+
+    t0 = _time.monotonic()
+    index = _build_filename_index(root)
+    _FILENAME_INDEX_CACHE[root] = (now, index)
+    logger.debug(
+        "Inline filename index refreshed (root=%s, unique_names=%d, elapsed_ms=%.0f)",
+        root,
+        len(index),
+        (_time.monotonic() - t0) * 1000,
+    )
+    return index
 
 
 def resolve_and_read_files(
@@ -87,6 +150,7 @@ def resolve_and_read_files(
     blocks: list[str] = []
     total = 0
     seen: set[Path] = set()
+    filename_index = _get_filename_index(project_root)
 
     for ref in references:
         # Try as-is relative to project root
@@ -96,10 +160,10 @@ def resolve_and_read_files(
         for prefix in ("src", "lib", "app", "tests", "test"):
             candidates.append(project_root / prefix / ref)
 
-        # Try recursive glob if it's just a filename
+        # Resolve bare filenames from a cached, constrained index.
         if "/" not in ref:
-            matches = list(project_root.rglob(ref))
-            candidates.extend(matches[:3])  # limit to avoid huge scans
+            matches = filename_index.get(ref, [])
+            candidates.extend(matches[:_MAX_INDEX_MATCHES])
 
         for path in candidates:
             path = path.resolve()

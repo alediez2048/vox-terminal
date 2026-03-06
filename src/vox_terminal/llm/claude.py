@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 from collections.abc import AsyncIterator
 from typing import Any
@@ -76,6 +77,15 @@ class ClaudeLLMClient(LLMClient):
                     async for text in response.text_stream:
                         emitted_chars += len(text)
                         yield text
+                    usage = await self._extract_usage(response)
+                    if usage:
+                        logger.info(
+                            "LLM usage metadata (input_tokens=%s, output_tokens=%s, cache_read_input_tokens=%s, cache_creation_input_tokens=%s)",
+                            usage.get("input_tokens", "n/a"),
+                            usage.get("output_tokens", "n/a"),
+                            usage.get("cache_read_input_tokens", "n/a"),
+                            usage.get("cache_creation_input_tokens", "n/a"),
+                        )
             logger.info("LLM stream completed (response_chars=%d)", emitted_chars)
         except anthropic.AuthenticationError:
             logger.error("Invalid API key — check VOX_TERMINAL_LLM__API_KEY")
@@ -102,6 +112,32 @@ class ClaudeLLMClient(LLMClient):
             content=content,
             model=self._settings.model,
         )
+
+    @staticmethod
+    async def _extract_usage(stream_response: Any) -> dict[str, Any] | None:
+        """Extract optional usage metadata from Anthropic stream responses."""
+        getter = getattr(stream_response, "get_final_message", None)
+        if not callable(getter):
+            return None
+
+        final_message = getter()
+        if inspect.isawaitable(final_message):
+            final_message = await final_message
+
+        usage = getattr(final_message, "usage", None)
+        if usage is None:
+            return None
+        if isinstance(usage, dict):
+            return usage
+
+        fields = (
+            "input_tokens",
+            "output_tokens",
+            "cache_read_input_tokens",
+            "cache_creation_input_tokens",
+        )
+        values = {field: getattr(usage, field) for field in fields if hasattr(usage, field)}
+        return values or None
 
     # -- internal helpers -----------------------------------------------------
 

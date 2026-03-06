@@ -188,10 +188,30 @@ class TestRecordUntilSilence:
                 cap._vad_callback(quiet, 160, None, None)
 
             task = asyncio.create_task(_simulate_quiet_then_timeout())
-            audio = await cap.record_until_silence(
+            _ = await cap.record_until_silence(
                 silence_threshold=0.01,
                 silence_duration=0.5,
                 max_duration=30.0,
             )
             await task
         assert not cap._speech_detected
+
+    def test_adaptive_hangover_uses_shorter_post_speech_duration(self) -> None:
+        cap = AudioCapture()
+        cap._adaptive_endpointing = True
+        cap._speech_detected = True
+        cap._speech_started_at = 10.0
+        cap._silence_duration = 0.8
+        cap._silence_duration_after_speech = 0.5
+
+        assert cap._resolve_required_silence_duration(10.8) == 0.5
+
+    def test_adaptive_hangover_preserves_base_for_very_short_utterance(self) -> None:
+        cap = AudioCapture()
+        cap._adaptive_endpointing = True
+        cap._speech_detected = True
+        cap._speech_started_at = 10.0
+        cap._silence_duration = 0.8
+        cap._silence_duration_after_speech = 0.5
+
+        assert cap._resolve_required_silence_duration(10.2) == 0.8
