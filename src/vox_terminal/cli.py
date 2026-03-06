@@ -84,14 +84,14 @@ async def _ask_and_speak(
         async for chunk in stream:
             chunks.append(chunk)
             if display_state is not None:
+                if display_state.phase != "speaking":
+                    display_state.phase = "speaking"
                 display_state.response_chunks.append(chunk)
             else:
                 console.print(chunk, end="", highlight=False)
             yield chunk
         if display_state is None:
             console.print()
-        if display_state is not None:
-            display_state.phase = "speaking"
 
     try:
         stream = llm.stream(question, history=history or None)
@@ -327,6 +327,13 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
             display_state.phase = "thinking"
             display_state.turn_start = _time.monotonic()
 
+            # Inject referenced file contents into the question
+            from vox_terminal.context.sources.inline import inject_file_context
+
+            enriched_question = inject_file_context(
+                question, settings.general.project_root,
+            )
+
             # --- TTS playback (with optional barge-in) ---
             interrupted_audio = None
 
@@ -341,7 +348,7 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
                 )
 
                 async def _speak_with_barge_in(
-                    q: str = question,
+                    q: str = enriched_question,
                     h: list[Message] | None = history or None,
                 ) -> str:
                     """Run TTS while watching for speech on the mic."""
@@ -405,7 +412,8 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
             else:
                 # Default path: no barge-in, TTS plays fully
                 response_text = await _ask_and_speak(
-                    question, llm, tts, history or None, display_state=display_state,
+                    enriched_question, llm, tts, history or None,
+                    display_state=display_state,
                 )
 
             # Update history + persist
@@ -432,8 +440,11 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
                     display_state.response_chunks.clear()
                     display_state.phase = "thinking"
 
+                    enriched_question = inject_file_context(
+                        question, settings.general.project_root,
+                    )
                     response_text = await _ask_and_speak(
-                        question, llm, tts, history or None,
+                        enriched_question, llm, tts, history or None,
                         display_state=display_state,
                     )
 
