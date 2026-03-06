@@ -52,7 +52,7 @@ class AudioCapture:
         self._recording_start: float = 0.0
         self._silence_threshold: float = 0.01
         self._silence_duration: float = 1.5
-        self._silence_duration_after_speech: float = 0.5
+        self._silence_duration_after_speech: float = 0.8
         self._adaptive_endpointing: bool = True
         self._speech_start_threshold: float | None = None
         self._speech_end_threshold: float | None = None
@@ -134,7 +134,7 @@ class AudioCapture:
         self,
         silence_threshold: float = 0.01,
         silence_duration: float = 0.7,
-        silence_duration_after_speech: float = 0.5,
+        silence_duration_after_speech: float = 0.8,
         adaptive_endpointing: bool = True,
         speech_start_threshold: float | None = None,
         speech_end_threshold: float | None = None,
@@ -275,7 +275,9 @@ class AudioCapture:
         if self._speech_started_at is None:
             return self._silence_duration
         utterance_duration = now - self._speech_started_at
-        if utterance_duration < 0.5:
+        # Keep the base hangover for short/medium utterances so natural pauses
+        # do not get mistaken for end-of-utterance.
+        if utterance_duration < 1.5:
             return self._silence_duration
         return min(self._silence_duration, self._silence_duration_after_speech)
 

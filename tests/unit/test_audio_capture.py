@@ -202,9 +202,9 @@ class TestRecordUntilSilence:
         cap._speech_detected = True
         cap._speech_started_at = 10.0
         cap._silence_duration = 0.8
-        cap._silence_duration_after_speech = 0.5
+        cap._silence_duration_after_speech = 0.7
 
-        assert cap._resolve_required_silence_duration(10.8) == 0.5
+        assert cap._resolve_required_silence_duration(11.8) == 0.7
 
     def test_adaptive_hangover_preserves_base_for_very_short_utterance(self) -> None:
         cap = AudioCapture()
@@ -212,6 +212,16 @@ class TestRecordUntilSilence:
         cap._speech_detected = True
         cap._speech_started_at = 10.0
         cap._silence_duration = 0.8
-        cap._silence_duration_after_speech = 0.5
+        cap._silence_duration_after_speech = 0.7
 
         assert cap._resolve_required_silence_duration(10.2) == 0.8
+
+    def test_adaptive_hangover_preserves_base_for_natural_mid_sentence_pause(self) -> None:
+        cap = AudioCapture()
+        cap._adaptive_endpointing = True
+        cap._speech_detected = True
+        cap._speech_started_at = 10.0
+        cap._silence_duration = 0.8
+        cap._silence_duration_after_speech = 0.7
+
+        assert cap._resolve_required_silence_duration(11.0) == 0.8

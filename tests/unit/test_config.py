@@ -67,7 +67,7 @@ class TestSTTSettings:
         assert s.whisper_beam_size == 3
         assert s.sample_rate == 16000
         assert s.silence_duration == 0.7
-        assert s.silence_duration_after_speech == 0.5
+        assert s.silence_duration_after_speech == 0.8
         assert s.adaptive_endpointing is True
 
 
