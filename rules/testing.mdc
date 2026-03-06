@@ -1,0 +1,26 @@
+---
+description: Test patterns for Vox Terminal
+globs: tests/**/*.py
+alwaysApply: false
+---
+
+# Testing Standards
+
+## Setup
+- `pytest`, `pytest-asyncio`, `asyncio_mode = "auto"`
+- Shared fixtures in `tests/conftest.py` (project_root, settings, clean_env)
+
+## Patterns
+- Use `@pytest.fixture` for reusable setup
+- Use `pytest.mark.asyncio` for async tests (or rely on asyncio_mode)
+- Mock external APIs (Anthropic, OpenAI, ElevenLabs) in unit tests
+- Use `pytest.mark.integration` for tests that hit real services
+- Use `pytest.mark.slow` for expensive tests
+
+## Structure
+- Unit: `tests/unit/test_<module>.py`
+- Integration: `tests/integration/test_pipeline.py`
+- Contracts: `tests/contracts/test_mcp_server.py` (MCP tool schema)
+
+## Naming
+- Test functions: `test_<behavior>_<condition>` (e.g. `test_transcribe_returns_empty_on_silence`)

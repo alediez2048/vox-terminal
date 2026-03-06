@@ -16,16 +16,55 @@ _FILE_PATTERN = re.compile(
     r"""(?:[\s"'`),.:;?!]|$)""",  # followed by whitespace, punctuation, or EOL
 )
 
-_BINARY_EXTENSIONS: frozenset[str] = frozenset({
-    ".pyc", ".pyo", ".so", ".dylib", ".dll", ".exe",
-    ".bin", ".o", ".a", ".lib", ".obj",
-    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".svg", ".webp",
-    ".mp3", ".mp4", ".wav", ".avi", ".mov", ".mkv", ".flac",
-    ".zip", ".tar", ".gz", ".bz2", ".xz", ".7z", ".rar",
-    ".woff", ".woff2", ".ttf", ".eot",
-    ".pdf", ".doc", ".docx", ".xls", ".xlsx",
-    ".db", ".sqlite", ".sqlite3",
-})
+_BINARY_EXTENSIONS: frozenset[str] = frozenset(
+    {
+        ".pyc",
+        ".pyo",
+        ".so",
+        ".dylib",
+        ".dll",
+        ".exe",
+        ".bin",
+        ".o",
+        ".a",
+        ".lib",
+        ".obj",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".bmp",
+        ".ico",
+        ".svg",
+        ".webp",
+        ".mp3",
+        ".mp4",
+        ".wav",
+        ".avi",
+        ".mov",
+        ".mkv",
+        ".flac",
+        ".zip",
+        ".tar",
+        ".gz",
+        ".bz2",
+        ".xz",
+        ".7z",
+        ".rar",
+        ".woff",
+        ".woff2",
+        ".ttf",
+        ".eot",
+        ".pdf",
+        ".doc",
+        ".docx",
+        ".xls",
+        ".xlsx",
+        ".db",
+        ".sqlite",
+        ".sqlite3",
+    }
+)
 
 _MAX_FILE_SIZE = 50_000  # bytes
 _MAX_INLINE_CHARS = 30_000  # total budget for inline files

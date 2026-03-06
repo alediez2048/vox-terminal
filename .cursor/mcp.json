@@ -1,7 +1,7 @@
 {
   "mcpServers": {
-    "voxcursor": {
-      "command": "voxcursor",
+    "vox-terminal": {
+      "command": "vox-terminal",
       "args": ["serve"]
     }
   }

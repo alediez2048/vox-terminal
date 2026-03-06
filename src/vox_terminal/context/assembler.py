@@ -7,13 +7,9 @@ import time as _time
 from pathlib import Path
 
 from vox_terminal.config import ContextSettings, GeneralSettings, MCPSettings
-from vox_terminal.context.sources.configs import (
-    get_config_context,
-    get_config_file_paths,
-)
-from vox_terminal.context.sources.files import get_file_contents, resolve_file_patterns
-from vox_terminal.context.sources.git import get_git_context
-from vox_terminal.context.sources.tree import get_directory_tree
+from vox_terminal.context.budget import ContextBudget, ContextFragment
+from vox_terminal.context.sources.base import ContextSource, ContextSourceConfig
+from vox_terminal.context.sources.registry import get_source_classes
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +22,12 @@ class ContextAssembler:
         general: GeneralSettings | None = None,
         mcp: MCPSettings | None = None,
         context_settings: ContextSettings | None = None,
+        sources: list[ContextSource] | None = None,
     ) -> None:
         self._general = general or GeneralSettings()
         self._mcp = mcp or MCPSettings()
         self._context = context_settings or ContextSettings()
+        self._sources = sources
 
     @property
     def project_root(self) -> Path:
@@ -56,70 +54,57 @@ class ContextAssembler:
         t0 = _time.monotonic()
         root = self.project_root
         ctx = self._context
-        sections: list[str] = []
-        remaining = ctx.max_context_chars
-
-        # -- Project configs & README --
-        config_ctx = get_config_context(
-            root, read_full_readme=ctx.read_full_readme,
+        budget = ContextBudget(ctx.max_context_chars)
+        source_config = ContextSourceConfig(
+            max_file_size=ctx.max_file_size,
+            max_context_chars=ctx.max_context_chars,
+            read_config_files=ctx.read_config_files,
+            read_full_readme=ctx.read_full_readme,
+            doc_patterns=list(ctx.doc_patterns),
+            include_files=list(ctx.include_files),
+            tree_depth=self.tree_depth,
+            include_git=include_git,
+            include_tree=include_tree,
         )
-        if config_ctx:
-            sections.append(f"## Project info\n\n{config_ctx}")
-            remaining -= len(config_ctx)
+        fragments: list[ContextFragment] = []
 
-        # -- Config file contents --
-        if ctx.read_config_files and remaining > 0:
-            config_paths = get_config_file_paths(root)
-            if config_paths:
-                content = get_file_contents(
-                    root, config_paths,
-                    max_file_size=ctx.max_file_size,
-                    max_total_chars=remaining,
-                )
-                if content:
-                    sections.append(f"## Config file contents\n\n{content}")
-                    remaining -= len(content)
+        if self._sources is not None:
+            sources = list(self._sources)
+        else:
+            enabled_sources = ctx.enabled_sources or None
+            source_classes = get_source_classes(enabled_sources)
+            sources = [source_class(source_config) for source_class in source_classes]
 
-        # -- Documentation files --
-        if ctx.doc_patterns and remaining > 0:
-            doc_paths = resolve_file_patterns(root, ctx.doc_patterns)
-            if doc_paths:
-                content = get_file_contents(
-                    root, doc_paths,
-                    max_file_size=ctx.max_file_size,
-                    max_total_chars=remaining,
-                )
-                if content:
-                    sections.append(f"## Documentation\n\n{content}")
-                    remaining -= len(content)
+        for source in sources:
+            if ctx.skip_network_sources and source.requires_network:
+                logger.debug("Skipping network source in offline mode: %s", source.name)
+                continue
+            try:
+                fragment = source.gather(root)
+            except Exception:
+                logger.exception("Context source failed: %s", source.name)
+                continue
+            if fragment and fragment.content:
+                fragments.append(fragment)
 
-        # -- User-specified files --
-        if ctx.include_files and remaining > 0:
-            user_paths = resolve_file_patterns(root, ctx.include_files)
-            if user_paths:
-                content = get_file_contents(
-                    root, user_paths,
-                    max_file_size=ctx.max_file_size,
-                    max_total_chars=remaining,
-                )
-                if content:
-                    sections.append(f"## Project files\n\n{content}")
-                    remaining -= len(content)
-
-        # -- Git --
-        if include_git:
-            git_ctx = get_git_context(root)
-            if git_ctx:
-                sections.append(f"## Git\n\n{git_ctx}")
-
-        # -- Directory tree --
-        if include_tree:
-            tree = get_directory_tree(root, max_depth=self.tree_depth)
-            if tree:
-                sections.append(f"## Directory tree\n\n```\n{tree}\n```")
+        # Allocate budget greedily from highest to lowest priority.
+        sections: list[str] = []
+        for fragment in sorted(fragments, key=lambda f: f.priority, reverse=True):
+            allocated = budget.allocate(fragment)
+            if allocated:
+                sections.append(allocated)
 
         if not sections:
             logger.debug("No context assembled for %s", root)
             return ""
-        logger.debug("Context assembled in %.0fms", (_time.monotonic() - t0) * 1000)
-        return "\n\n".join(sections) + "\n"
+        elapsed_ms = (_time.monotonic() - t0) * 1000
+        result = "\n\n".join(sections) + "\n"
+        logger.info(
+            "Context assembled (chars=%d, sections=%d, remaining_chars=%d, elapsed_ms=%.0f)",
+            len(result),
+            len(sections),
+            budget.remaining_chars,
+            elapsed_ms,
+        )
+        logger.debug("Context sections included: %s", ", ".join(s.name for s in fragments))
+        return result

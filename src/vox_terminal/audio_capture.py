@@ -93,9 +93,7 @@ class AudioCapture:
     def start(self) -> None:
         """Clear the buffer and begin recording from the microphone."""
         if sd is None:
-            raise AudioCaptureError(
-                "sounddevice is not available — cannot record audio"
-            )
+            raise AudioCaptureError("sounddevice is not available — cannot record audio")
         self._chunks.clear()
         self._stream = sd.InputStream(
             samplerate=self._sample_rate,
@@ -138,9 +136,7 @@ class AudioCapture:
         Returns the captured audio as a float32 numpy array.
         """
         if sd is None:
-            raise AudioCaptureError(
-                "sounddevice is not available — cannot record audio"
-            )
+            raise AudioCaptureError("sounddevice is not available — cannot record audio")
 
         self._speech_detected = False
         self._silence_start = None
@@ -160,8 +156,11 @@ class AudioCapture:
             callback=self._vad_callback,
         )
         self._stream.start()
-        logger.debug("Hands-free recording started (threshold=%.4f, silence=%.1fs)",
-                      silence_threshold, silence_duration)
+        logger.debug(
+            "Hands-free recording started (threshold=%.4f, silence=%.1fs)",
+            silence_threshold,
+            silence_duration,
+        )
 
         await self._done_event.wait()
         return self.stop()

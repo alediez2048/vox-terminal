@@ -1,0 +1,21 @@
+---
+description: TTS and user-facing text guidelines
+globs: src/vox_terminal/tts/**/*.py, src/vox_terminal/llm/**/*.py
+alwaysApply: false
+---
+
+# TTS & User-Facing Text
+
+## Sanitization
+- Strip markdown before TTS: bold, code, headings, links (keep link text)
+- Remove conventional commit prefixes (`feat:`, `fix:`, etc.)
+- Remove ticket tags like `(MVP-017)`
+- Use `_sanitize_for_speech()` in `tts/base.py` for LLM output
+
+## LLM System Prompt
+- Instruct Claude to respond in plain conversational language
+- No markdown, no code blocks, no special formatting — output is spoken aloud
+
+## Error Messages
+- User-facing errors should be clear and actionable
+- Avoid raw stack traces; log details, surface a friendly message

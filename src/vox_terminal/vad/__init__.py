@@ -20,6 +20,7 @@ def create_vad_engine(
     if engine == "silero":
         try:
             import torch  # noqa: F401
+
             from vox_terminal.vad.silero import SileroVAD
 
             return SileroVAD(threshold=threshold)

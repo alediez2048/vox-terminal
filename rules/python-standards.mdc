@@ -1,0 +1,27 @@
+---
+description: Python code standards for Vox Terminal
+globs: src/**/*.py
+alwaysApply: false
+---
+
+# Python Standards
+
+## Style
+- Line length: 100 (ruff)
+- Use `from __future__ import annotations` for forward refs
+- Prefer `Path` over `str` for file paths
+- Use `Literal` for fixed string options in config
+
+## Typing
+- Full type annotations; mypy strict mode
+- Use `X | None` over `Optional[X]`
+- Dataclasses for value objects (e.g. `TranscriptionResult`, `VADResult`)
+
+## Async
+- Use `async def` for I/O-bound operations (STT, TTS, LLM)
+- Prefer `asyncio` over threading for concurrency
+
+## Error Handling
+- Retry transient errors via `retry_async()` (exponential backoff)
+- Fallback gracefully: mic → text input, cloud TTS → macOS say
+- Never crash the session; surface clean error messages

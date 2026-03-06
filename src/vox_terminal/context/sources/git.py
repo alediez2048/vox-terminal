@@ -5,6 +5,9 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from vox_terminal.context.budget import ContextFragment
+from vox_terminal.context.sources.base import ContextSource, ContextSourceConfig
+
 
 def _run_git(root: Path, *args: str) -> str | None:
     """Run a git command and return stdout, or None on failure."""
@@ -66,3 +69,28 @@ def get_git_context(root: Path) -> str:
     if not parts:
         return ""
     return "\n\n".join(parts)
+
+
+class GitContextSource(ContextSource):
+    """Context source for git branch, status, remote, and recent commits."""
+
+    name = "git"
+    priority = 60
+
+    def __init__(self, config: ContextSourceConfig) -> None:
+        super().__init__(config)
+        self._include_git = config.include_git
+
+    def gather(self, project_root: Path) -> ContextFragment | None:
+        if not self._include_git:
+            return None
+        content = get_git_context(project_root)
+        if not content:
+            return None
+        section = f"## Git\n\n{content}"
+        return ContextFragment(
+            name=self.name,
+            content=section,
+            priority=self.priority,
+            token_estimate=max(1, len(section) // 4),
+        )

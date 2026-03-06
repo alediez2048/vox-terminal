@@ -1,0 +1,22 @@
+---
+description: Configuration and pydantic-settings patterns
+globs: src/vox_terminal/config.py
+alwaysApply: false
+---
+
+# Configuration
+
+## Adding New Settings
+1. Add fields to the appropriate `*Settings` model (e.g. `STTSettings`)
+2. Use `Literal` for fixed options (e.g. `Literal["whisper_local", "openai"]`)
+3. Provide sensible defaults; use `Field(default_factory=...)` for mutable defaults
+4. Add to `VoxTerminalSettings` if it's a new section
+
+## Env Var Mapping
+- Prefix: `VOX_TERMINAL_`
+- Nested: `__` (e.g. `VOX_TERMINAL_STT__WHISPER_MODEL`)
+- TOML: `vox-terminal.toml` in project root, nested sections
+
+## Secrets
+- API keys: `str = ""`; load from env, never hardcode
+- Exclude `.env` from context assembly; detect-secrets in pre-commit

@@ -1,0 +1,30 @@
+---
+description: Test Driven Development workflow
+globs: "**/*.py"
+alwaysApply: false
+---
+
+# Test Driven Development
+
+## Red-Green-Refactor
+1. **Red**: Write a failing test that defines the desired behavior
+2. **Green**: Write the minimum code to make the test pass
+3. **Refactor**: Improve the implementation without changing behavior
+
+## Workflow
+- Write the test *before* the implementation
+- One behavior per test; keep tests focused
+- Run `pytest tests/unit/test_<module>.py -v` frequently
+- Prefer unit tests for new logic; add integration tests only when needed
+
+## When Adding Features
+1. Add `test_<new_behavior>` in the appropriate `tests/unit/test_<module>.py`
+2. Run pytest — expect failure
+3. Implement in `src/vox_terminal/` until the test passes
+4. Refactor if needed; tests must stay green
+
+## When Fixing Bugs
+1. Add a regression test that reproduces the bug
+2. Verify it fails
+3. Fix the code
+4. Verify the test passes

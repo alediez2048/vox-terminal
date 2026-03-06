@@ -1,0 +1,21 @@
+---
+description: Async and concurrency patterns
+globs: src/vox_terminal/**/*.py
+alwaysApply: false
+---
+
+# Async Patterns
+
+## Event Loop
+- Use `async def` for I/O (STT, TTS, LLM, audio); avoid blocking the event loop
+- Don't call `time.sleep()`; use `await asyncio.sleep()`
+- CPU-bound work (Whisper inference) may block; consider `run_in_executor` if needed
+
+## Retries
+- Use `retry_async()` for transient errors (OSError, TimeoutError, ConnectionError)
+- Exponential backoff: 1s → 2s → 4s; configurable via `base_delay`, `max_attempts`
+- Don't retry non-transient errors (validation, auth failures)
+
+## Streaming
+- Prefer `AsyncIterator[str]` for LLM → TTS; buffer at sentence boundaries
+- Cancel or interrupt cleanly; respect `interrupt()` on TTS engines

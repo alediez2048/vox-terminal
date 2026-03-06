@@ -2,24 +2,24 @@
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import AsyncIterator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from vox_terminal.config import TTSSettings
-from vox_terminal.tts import TTSEngine, create_tts_engine
-from vox_terminal.tts.base import FallbackTTSEngine, TTSEngine as BaseTTSEngine
+from vox_terminal.tts import create_tts_engine
+from vox_terminal.tts.base import FallbackTTSEngine
+from vox_terminal.tts.base import TTSEngine as BaseTTSEngine
 from vox_terminal.tts.elevenlabs_tts import ElevenLabsTTS
 from vox_terminal.tts.macos_say import MacOSSayTTS
 from vox_terminal.tts.openai_tts import OpenAITTS
 from vox_terminal.tts.piper import PiperTTS
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 class ConcreteTTS(BaseTTSEngine):
     """Minimal concrete implementation for testing the base class."""
@@ -40,6 +40,7 @@ async def _async_chunks(texts: list[str]) -> AsyncIterator[str]:
 # ---------------------------------------------------------------------------
 # speak_streamed sentence buffering
 # ---------------------------------------------------------------------------
+
 
 class TestSpeakStreamed:
     async def test_splits_on_period(self) -> None:
@@ -87,6 +88,7 @@ class TestSpeakStreamed:
 # MacOSSayTTS
 # ---------------------------------------------------------------------------
 
+
 class TestMacOSSayTTS:
     async def test_speak_calls_subprocess(self) -> None:
         settings = TTSSettings(macos_voice="Alex", macos_rate=180)
@@ -95,8 +97,11 @@ class TestMacOSSayTTS:
         mock_proc = AsyncMock()
         mock_proc.wait = AsyncMock(return_value=0)
 
-        with patch("vox_terminal.tts.macos_say.asyncio.create_subprocess_exec",
-                    new_callable=AsyncMock, return_value=mock_proc) as mock_exec:
+        with patch(
+            "vox_terminal.tts.macos_say.asyncio.create_subprocess_exec",
+            new_callable=AsyncMock,
+            return_value=mock_proc,
+        ) as mock_exec:
             await engine.speak("Hello world")
 
             mock_exec.assert_called_once()
@@ -121,10 +126,12 @@ class TestMacOSSayTTS:
         mock_proc.kill = MagicMock()
 
         with (
-            patch("vox_terminal.tts.macos_say.asyncio.create_subprocess_exec",
-                  new_callable=AsyncMock, return_value=mock_proc),
-            patch("vox_terminal.tts.macos_say.asyncio.wait_for",
-                  side_effect=TimeoutError),
+            patch(
+                "vox_terminal.tts.macos_say.asyncio.create_subprocess_exec",
+                new_callable=AsyncMock,
+                return_value=mock_proc,
+            ),
+            patch("vox_terminal.tts.macos_say.asyncio.wait_for", side_effect=TimeoutError),
         ):
             await engine.speak("Hello world")
 
@@ -135,6 +142,7 @@ class TestMacOSSayTTS:
 # ---------------------------------------------------------------------------
 # create_tts_engine factory
 # ---------------------------------------------------------------------------
+
 
 class TestCreateTTSEngine:
     def test_creates_macos_say(self) -> None:
@@ -166,6 +174,7 @@ class TestCreateTTSEngine:
 # ElevenLabsTTS
 # ---------------------------------------------------------------------------
 
+
 class TestElevenLabsTTS:
     async def test_speak_buffered_with_afplay(self) -> None:
         """Without ffplay, should buffer bytes and play with afplay."""
@@ -191,8 +200,11 @@ class TestElevenLabsTTS:
 
         with (
             patch.object(engine._client.text_to_speech, "convert", mock_convert),
-            patch("vox_terminal.tts.elevenlabs_tts.asyncio.create_subprocess_exec",
-                  new_callable=AsyncMock, return_value=mock_proc) as mock_exec,
+            patch(
+                "vox_terminal.tts.elevenlabs_tts.asyncio.create_subprocess_exec",
+                new_callable=AsyncMock,
+                return_value=mock_proc,
+            ) as mock_exec,
         ):
             await engine.speak("Hello world")
 
@@ -242,8 +254,11 @@ class TestElevenLabsTTS:
 
         with (
             patch.object(engine._client.text_to_speech, "convert", mock_convert),
-            patch("vox_terminal.tts.elevenlabs_tts.asyncio.create_subprocess_exec",
-                  new_callable=AsyncMock, return_value=mock_proc) as mock_exec,
+            patch(
+                "vox_terminal.tts.elevenlabs_tts.asyncio.create_subprocess_exec",
+                new_callable=AsyncMock,
+                return_value=mock_proc,
+            ) as mock_exec,
         ):
             await engine.speak("Hello streaming")
 
@@ -298,18 +313,143 @@ class TestElevenLabsTTS:
 
         with (
             patch.object(engine._client.text_to_speech, "convert", mock_convert),
-            patch("vox_terminal.tts.elevenlabs_tts.asyncio.create_subprocess_exec",
-                  new_callable=AsyncMock, return_value=mock_proc),
+            patch(
+                "vox_terminal.tts.elevenlabs_tts.asyncio.create_subprocess_exec",
+                new_callable=AsyncMock,
+                return_value=mock_proc,
+            ),
         ):
             # Interrupt after a short delay
             engine.interrupt()
             await engine.speak("Test interrupt")
             # speak returns immediately because _interrupted is True
 
+    async def test_speak_returns_early_when_interrupted(self) -> None:
+        """When _interrupted is True, speak does not call the API."""
+        settings = TTSSettings(
+            engine="elevenlabs",
+            elevenlabs_api_key="test-key",
+        )
+        with patch("vox_terminal.tts.elevenlabs_tts.shutil.which", return_value=None):
+            engine = ElevenLabsTTS(settings)
+        engine._interrupted = True
+
+        with patch.object(
+            engine._client.text_to_speech,
+            "convert",
+            new_callable=MagicMock,
+        ) as mock_convert:
+            await engine.speak("Hello world")
+            mock_convert.assert_not_called()
+
+    def test_interrupt_terminates_process(self) -> None:
+        """Interrupt calls terminate() on running playback process."""
+        settings = TTSSettings(
+            engine="elevenlabs",
+            elevenlabs_api_key="test-key",
+        )
+        with patch("vox_terminal.tts.elevenlabs_tts.shutil.which", return_value=None):
+            engine = ElevenLabsTTS(settings)
+
+        mock_proc = MagicMock()
+        mock_proc.returncode = None
+        mock_proc.terminate = MagicMock()
+
+        with patch("vox_terminal.tts.elevenlabs_tts.asyncio.get_event_loop") as mock_loop:
+            mock_loop.return_value.call_later = MagicMock()
+            engine._proc = mock_proc
+            engine.interrupt()
+
+            mock_proc.terminate.assert_called_once()
+            mock_loop.return_value.call_later.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# OpenAITTS
+# ---------------------------------------------------------------------------
+
+
+class TestOpenAITTS:
+    async def test_speak_mocks_api_and_afplay(self) -> None:
+        """Speak calls OpenAI API and spawns afplay for playback."""
+        settings = TTSSettings(
+            engine="openai",
+            openai_api_key="sk-test",
+            openai_voice="alloy",
+            openai_model="tts-1",
+        )
+        engine = OpenAITTS(settings)
+
+        mock_response = MagicMock()
+        mock_response.content = b"fake-mp3-data"
+
+        mock_proc = AsyncMock()
+        mock_proc.wait = AsyncMock(return_value=0)
+        mock_proc.returncode = None
+
+        with (
+            patch.object(
+                engine._client.audio.speech,
+                "create",
+                new_callable=AsyncMock,
+                return_value=mock_response,
+            ) as mock_create,
+            patch(
+                "vox_terminal.tts.openai_tts.asyncio.create_subprocess_exec",
+                new_callable=AsyncMock,
+                return_value=mock_proc,
+            ) as mock_exec,
+        ):
+            await engine.speak("Hello world")
+
+            mock_create.assert_awaited_once_with(
+                model="tts-1",
+                voice="alloy",
+                input="Hello world",
+            )
+            mock_exec.assert_called_once()
+            assert mock_exec.call_args[0][0] == "afplay"
+            mock_proc.wait.assert_awaited_once()
+
+    async def test_speak_returns_early_when_interrupted(self) -> None:
+        """When _interrupted is True, speak does not call the API."""
+        settings = TTSSettings(
+            engine="openai",
+            openai_api_key="sk-test",
+        )
+        engine = OpenAITTS(settings)
+        engine._interrupted = True
+
+        with patch.object(
+            engine._client.audio.speech,
+            "create",
+            new_callable=AsyncMock,
+        ) as mock_create:
+            await engine.speak("Hello world")
+            mock_create.assert_not_called()
+
+    def test_interrupt_terminates_process(self) -> None:
+        """Interrupt calls terminate() on running afplay process."""
+        settings = TTSSettings(
+            engine="openai",
+            openai_api_key="sk-test",
+        )
+        engine = OpenAITTS(settings)
+
+        mock_proc = MagicMock()
+        mock_proc.returncode = None
+        mock_proc.terminate = MagicMock()
+
+        engine._proc = mock_proc
+        engine.interrupt()
+
+        mock_proc.terminate.assert_called_once()
+
 
 # ---------------------------------------------------------------------------
 # PiperTTS raises NotImplementedError
 # ---------------------------------------------------------------------------
+
 
 class TestPiperTTS:
     async def test_speak_raises_not_implemented(self) -> None:
@@ -322,6 +462,7 @@ class TestPiperTTS:
 # ---------------------------------------------------------------------------
 # FallbackTTSEngine
 # ---------------------------------------------------------------------------
+
 
 class TestFallbackTTSEngine:
     async def test_uses_primary_when_healthy(self) -> None:
@@ -365,7 +506,7 @@ class TestFallbackTTSEngine:
         primary.speak = _fail_once  # type: ignore[assignment]
         engine = FallbackTTSEngine(primary, fallback)
 
-        await engine.speak("First")   # triggers fallback
+        await engine.speak("First")  # triggers fallback
         await engine.speak("Second")  # stays on fallback
 
         assert fallback.spoken == ["First", "Second"]

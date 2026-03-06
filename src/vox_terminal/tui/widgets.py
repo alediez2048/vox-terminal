@@ -24,9 +24,7 @@ class SoundBar:
         self._levels = levels
         self._width = width
 
-    def __rich_console__(
-        self, console: Console, options: ConsoleOptions
-    ) -> RenderResult:
+    def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
         width = min(self._width, options.max_width)
         # Take the most recent `width` samples, pad with 0 if fewer
         samples = list(self._levels)[-width:]
@@ -83,9 +81,7 @@ class StateSpinner:
             self._spinner = Spinner(name, text=_PHASE_LABELS[phase], style=_PHASE_STYLES[phase])
             self._speaker_start = 0.0
 
-    def __rich_console__(
-        self, console: Console, options: ConsoleOptions
-    ) -> RenderResult:
+    def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
         if self._phase == "speaking":
             idx = int((_time.monotonic() - self._speaker_start) * 3) % len(_SPEAKER_FRAMES)
             frame = _SPEAKER_FRAMES[idx]
@@ -101,9 +97,7 @@ class ResponsePanel:
         self._chunks = chunks
         self._question = question
 
-    def __rich_console__(
-        self, console: Console, options: ConsoleOptions
-    ) -> RenderResult:
+    def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
         body_parts: list[Text] = []
         if self._question:
             body_parts.append(Text(f"You: {self._question}", style="bold cyan"))
@@ -130,9 +124,7 @@ class StatusBar:
     def __init__(self, state: DisplayState) -> None:
         self._state = state
 
-    def __rich_console__(
-        self, console: Console, options: ConsoleOptions
-    ) -> RenderResult:
+    def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
         s = self._state
 
         # Phase icon

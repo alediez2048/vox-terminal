@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from vox_terminal.context.budget import ContextFragment
+from vox_terminal.context.sources.base import ContextSource, ContextSourceConfig
+
 _CONFIG_FILES: tuple[str, ...] = (
     "pyproject.toml",
     "setup.py",
@@ -32,7 +35,10 @@ _SENSITIVE_CONFIG_FILES: frozenset[str] = frozenset({".env"})
 _README_MAX_CHARS = 500
 
 _README_CANDIDATES: tuple[str, ...] = (
-    "README.md", "README.rst", "README.txt", "README",
+    "README.md",
+    "README.rst",
+    "README.txt",
+    "README",
 )
 
 
@@ -101,3 +107,26 @@ def get_config_context(root: Path, *, read_full_readme: bool = False) -> str:
             parts.append(f"**README (excerpt):**\n```\n{readme}\n```")
 
     return "\n\n".join(parts)
+
+
+class ConfigsContextSource(ContextSource):
+    """Context source for project-level config metadata and README content."""
+
+    name = "project_info"
+    priority = 100
+
+    def __init__(self, config: ContextSourceConfig) -> None:
+        super().__init__(config)
+        self._read_full_readme = config.read_full_readme
+
+    def gather(self, project_root: Path) -> ContextFragment | None:
+        content = get_config_context(project_root, read_full_readme=self._read_full_readme)
+        if not content:
+            return None
+        section = f"## Project info\n\n{content}"
+        return ContextFragment(
+            name=self.name,
+            content=section,
+            priority=self.priority,
+            token_estimate=max(1, len(section) // 4),
+        )

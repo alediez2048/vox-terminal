@@ -55,9 +55,7 @@ class WhisperLocalSTT(STTEngine):
     # Transcription
     # ------------------------------------------------------------------
 
-    async def transcribe(
-        self, audio: np.ndarray, sample_rate: int = 16000
-    ) -> TranscriptionResult:
+    async def transcribe(self, audio: np.ndarray, sample_rate: int = 16000) -> TranscriptionResult:
         """Transcribe *audio* using the local Whisper model.
 
         The heavy ``model.transcribe()`` call is offloaded to a thread-pool

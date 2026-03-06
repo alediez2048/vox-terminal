@@ -1,0 +1,27 @@
+---
+description: System design and architecture principles
+globs: src/vox_terminal/**/*.py
+alwaysApply: false
+---
+
+# System Design
+
+## Modularity
+- Each pipeline stage (STT, TTS, VAD, LLM, context) behind an abstract interface
+- One responsibility per module; avoid god objects
+- Depend on abstractions, not concrete implementations
+
+## Interfaces
+- Define ABCs in `*/base.py` with clear contracts
+- Use factory functions (`create_*_engine()`) for construction
+- New engines: implement interface → add factory branch → add config → add tests
+
+## Boundaries
+- External APIs (Anthropic, OpenAI, ElevenLabs) behind interfaces; mock in tests
+- Config via pydantic-settings; no hardcoded secrets or env-specific logic
+- Fail at boundaries: validate inputs, handle errors, fallback gracefully
+
+## Data Flow
+- Prefer streaming over batch where latency matters (LLM → TTS)
+- Keep pipeline stages loosely coupled; pass data, not callbacks
+- Avoid shared mutable state; use explicit parameters and return values

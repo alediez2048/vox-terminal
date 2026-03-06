@@ -45,15 +45,15 @@ class OpenAISTT(STTEngine):
         chunk_size = 36 + data_size  # 36 = size of header minus RIFF/size fields
 
         header = struct.pack(
-            "<4sI4s"   # RIFF header
+            "<4sI4s"  # RIFF header
             "4sIHHIIHH"  # fmt  sub-chunk
-            "4sI",       # data sub-chunk header
+            "4sI",  # data sub-chunk header
             b"RIFF",
             chunk_size,
             b"WAVE",
             b"fmt ",
-            16,                # fmt chunk size (PCM)
-            1,                 # audio format (1 = PCM)
+            16,  # fmt chunk size (PCM)
+            1,  # audio format (1 = PCM)
             num_channels,
             sample_rate,
             byte_rate,
@@ -69,9 +69,7 @@ class OpenAISTT(STTEngine):
     # Transcription
     # ------------------------------------------------------------------
 
-    async def transcribe(
-        self, audio: np.ndarray, sample_rate: int = 16000
-    ) -> TranscriptionResult:
+    async def transcribe(self, audio: np.ndarray, sample_rate: int = 16000) -> TranscriptionResult:
         """Transcribe *audio* via the OpenAI ``whisper-1`` API."""
         wav_bytes = self._numpy_to_wav_bytes(audio, sample_rate)
 

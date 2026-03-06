@@ -1,0 +1,22 @@
+---
+description: MCP tool development for Cursor integration
+globs: src/vox_terminal/mcp_server.py
+alwaysApply: false
+---
+
+# MCP Tools
+
+## Adding Tools
+- Use `@mcp.tool()` with `async def`; tool docstring becomes the tool description
+- Keep parameters simple: `str`, `bool`, `int`; avoid complex types
+- Return `str`; Cursor consumes tool output as text
+
+## Contract Tests
+- Add tests in `tests/contracts/test_mcp_server.py`
+- Verify tool exists via `server._tool_manager.list_tools()`
+- Test tool behavior by calling `server._tool_manager.call_tool(name, args)`
+- Mock `ContextAssembler`, `create_llm_client`, etc.; never hit real APIs
+
+## Schema Stability
+- Avoid breaking changes to tool names or parameter types
+- Add optional parameters with defaults for backward compatibility

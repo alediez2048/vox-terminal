@@ -15,6 +15,10 @@ class GeneralSettings(BaseModel):
     project_root: Path = Field(default_factory=Path.cwd)
     verbose: bool = False
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+    log_sensitive: bool = False
+    log_file: Path | None = None
+    log_rotate_max_bytes: int = 5_000_000
+    log_rotate_backup_count: int = 3
     memory_enabled: bool = True
     memory_db_path: Path | None = None
     memory_max_messages: int = 40
@@ -47,6 +51,7 @@ class LLMSettings(BaseModel):
     api_key: str = ""
     max_history_turns: int = 10
     stream_timeout: float = 60.0
+    prompt_caching_enabled: bool = True
 
 
 class TTSSettings(BaseModel):
@@ -70,10 +75,12 @@ class ContextSettings(BaseModel):
     """Settings for project context assembly."""
 
     include_files: list[str] = Field(default_factory=list)
+    enabled_sources: list[str] = Field(default_factory=list)
     max_file_size: int = 50_000
     max_context_chars: int = 200_000
     read_config_files: bool = True
     read_full_readme: bool = True
+    skip_network_sources: bool = False
     doc_patterns: list[str] = Field(
         default_factory=lambda: [
             "DEVLOG.md",

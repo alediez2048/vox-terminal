@@ -6,16 +6,20 @@ import asyncio
 import contextlib
 import logging
 import sys
+import time as _time
 from collections.abc import AsyncIterator
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
 import typer
 from rich.console import Console
 from rich.panel import Panel
 
-from vox_terminal.config import VoxTerminalSettings, load_settings
+from vox_terminal.config import GeneralSettings, VoxTerminalSettings, load_settings
 from vox_terminal.context.assembler import ContextAssembler
 from vox_terminal.llm import Message, create_llm_client
 from vox_terminal.llm.base import LLMClient
+from vox_terminal.observability import TurnContext, generate_turn_id, get_current_turn_id
 from vox_terminal.stt import create_stt_engine
 from vox_terminal.tts import create_tts_engine
 from vox_terminal.tts.base import TTSEngine
@@ -37,13 +41,58 @@ console = Console()
 # ---------------------------------------------------------------------------
 
 
-def _configure_logging(level: str) -> None:
+class _TurnIDFilter(logging.Filter):
+    """Inject the active turn ID into log records."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        turn_id = get_current_turn_id()
+        record.turn_id = turn_id[:8] if turn_id else "-"
+        return True
+
+
+def _resolve_log_file_path(settings: GeneralSettings) -> Path:
+    """Resolve the on-disk log path from settings."""
+    if settings.log_file is not None:
+        return settings.log_file.expanduser()
+    return Path.home() / ".vox-terminal" / "vox-terminal.log"
+
+
+def _configure_logging(settings: GeneralSettings) -> None:
     """Set up root logger and quiet noisy third-party loggers."""
-    logging.basicConfig(
-        level=getattr(logging, level, logging.INFO),
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%H:%M:%S",
+    root = logging.getLogger()
+    root.handlers.clear()
+    root.setLevel(getattr(logging, settings.log_level, logging.INFO))
+
+    console_handler = logging.StreamHandler()
+    console_handler.addFilter(_TurnIDFilter())
+    console_handler.setFormatter(
+        logging.Formatter(
+            "%(asctime)s [%(levelname)s] [turn:%(turn_id)s] %(name)s: %(message)s",
+            datefmt="%H:%M:%S",
+        )
     )
+    root.addHandler(console_handler)
+
+    log_file = _resolve_log_file_path(settings)
+    try:
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        file_handler = RotatingFileHandler(
+            log_file,
+            maxBytes=settings.log_rotate_max_bytes,
+            backupCount=settings.log_rotate_backup_count,
+            encoding="utf-8",
+        )
+        file_handler.addFilter(_TurnIDFilter())
+        file_handler.setFormatter(
+            logging.Formatter(
+                "%(asctime)s [%(levelname)s] [turn:%(turn_id)s] %(name)s: %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+            )
+        )
+        root.addHandler(file_handler)
+    except OSError:
+        logger.warning("Unable to configure log file handler at %s", log_file)
+
     for name in ("httpx", "httpcore", "anthropic", "openai", "elevenlabs"):
         logging.getLogger(name).setLevel(logging.WARNING)
 
@@ -69,6 +118,7 @@ async def _ask_and_speak(
     tts: TTSEngine,
     history: list[Message] | None = None,
     display_state: DisplayState | None = None,
+    log_sensitive: bool = False,
 ) -> str:
     """Stream an LLM response for *question* and speak it via TTS.
 
@@ -79,6 +129,12 @@ async def _ask_and_speak(
     import httpx
 
     chunks: list[str] = []
+    t0 = _time.monotonic()
+    logger.info(
+        "LLM/TTS stage started (question_chars=%d, history_messages=%d)",
+        len(question),
+        len(history or []),
+    )
 
     async def _collecting_tee(stream: AsyncIterator[str]) -> AsyncIterator[str]:
         async for chunk in stream:
@@ -108,7 +164,13 @@ async def _ask_and_speak(
         return ""
     except asyncio.CancelledError:
         # Barge-in interrupted playback — not an error
-        return "".join(chunks)
+        partial = "".join(chunks)
+        logger.info(
+            "LLM/TTS stage interrupted (response_chars=%d, elapsed_ms=%.0f)",
+            len(partial),
+            (_time.monotonic() - t0) * 1000,
+        )
+        return partial
     except TypeError as exc:
         if "authentication" in str(exc).lower():
             console.print(
@@ -126,7 +188,15 @@ async def _ask_and_speak(
         console.print(f"[red]Network error: {exc}[/red]")
         return ""
 
-    return "".join(chunks)
+    response = "".join(chunks)
+    logger.info(
+        "LLM/TTS stage finished (response_chars=%d, elapsed_ms=%.0f)",
+        len(response),
+        (_time.monotonic() - t0) * 1000,
+    )
+    if log_sensitive:
+        logger.debug("LLM response preview: %s", response[:200])
+    return response
 
 
 async def _ask_once(
@@ -135,12 +205,20 @@ async def _ask_once(
     history: list[Message] | None = None,
 ) -> str:
     """Ask a single question: context → LLM stream → TTS."""
+    context_t0 = _time.monotonic()
     assembler = ContextAssembler(
-        settings.general, settings.mcp, context_settings=settings.context,
+        settings.general,
+        settings.mcp,
+        context_settings=settings.context,
     )
     context = assembler.assemble(
         include_git=settings.mcp.include_git,
         include_tree=settings.mcp.include_tree,
+    )
+    logger.info(
+        "Context assembly finished (chars=%d, elapsed_ms=%.0f)",
+        len(context),
+        (_time.monotonic() - context_t0) * 1000,
     )
 
     llm = create_llm_client(settings.llm, project_context=context)
@@ -149,7 +227,76 @@ async def _ask_once(
     console.print(f"\n[bold cyan]You:[/bold cyan] {question}")
     console.print("[bold green]Vox-Terminal:[/bold green] ", end="")
 
-    return await _ask_and_speak(question, llm, tts, history)
+    return await _ask_and_speak(
+        question,
+        llm,
+        tts,
+        history,
+        log_sensitive=settings.general.log_sensitive,
+    )
+
+
+async def _run_diagnostics(
+    settings: VoxTerminalSettings,
+    *,
+    no_audio: bool = False,
+) -> list[tuple[str, bool, str, float]]:
+    """Run a minimal diagnostics pass across core pipeline stages."""
+    results: list[tuple[str, bool, str, float]] = []
+
+    # Context
+    t0 = _time.monotonic()
+    try:
+        assembler = ContextAssembler(
+            settings.general,
+            settings.mcp,
+            context_settings=settings.context,
+        )
+        context = assembler.assemble(
+            include_git=settings.mcp.include_git,
+            include_tree=settings.mcp.include_tree,
+        )
+        results.append(("context", True, f"{len(context)} chars assembled", (_time.monotonic() - t0) * 1000))
+    except Exception as exc:
+        results.append(("context", False, str(exc), (_time.monotonic() - t0) * 1000))
+
+    # STT
+    t0 = _time.monotonic()
+    try:
+        stt = create_stt_engine(settings.stt)
+        if hasattr(stt, "_load_model"):
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, stt._load_model)
+        results.append(("stt", True, f"engine={settings.stt.engine}", (_time.monotonic() - t0) * 1000))
+    except Exception as exc:
+        results.append(("stt", False, str(exc), (_time.monotonic() - t0) * 1000))
+
+    # LLM
+    t0 = _time.monotonic()
+    try:
+        llm = create_llm_client(settings.llm, project_context="")
+        probe = await asyncio.wait_for(
+            llm.ask("Reply with exactly this word: ok"),
+            timeout=min(settings.llm.stream_timeout, 20.0),
+        )
+        summary = probe.content.strip().replace("\n", " ")[:80]
+        results.append(("llm", True, summary or "ok", (_time.monotonic() - t0) * 1000))
+    except Exception as exc:
+        results.append(("llm", False, str(exc), (_time.monotonic() - t0) * 1000))
+
+    # TTS
+    t0 = _time.monotonic()
+    if no_audio:
+        results.append(("tts", True, "skipped (--no-audio)", (_time.monotonic() - t0) * 1000))
+    else:
+        try:
+            tts = create_tts_engine(settings.tts)
+            await tts.speak("Diagnostics complete.")
+            results.append(("tts", True, f"engine={settings.tts.engine}", (_time.monotonic() - t0) * 1000))
+        except Exception as exc:
+            results.append(("tts", False, str(exc), (_time.monotonic() - t0) * 1000))
+
+    return results
 
 
 async def _interactive_loop(settings: VoxTerminalSettings) -> None:
@@ -174,9 +321,7 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
         stt = create_stt_engine(settings.stt)
     except AudioCaptureError:
         use_voice = False
-        console.print(
-            "[yellow]Microphone unavailable — falling back to text input.[/yellow]"
-        )
+        console.print("[yellow]Microphone unavailable — falling back to text input.[/yellow]")
     except OSError as exc:
         use_voice = False
         console.print(f"[yellow]Audio device error ({exc}) — using text input.[/yellow]")
@@ -203,14 +348,14 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
     # Run heavy startup tasks concurrently:
     # 1. Context assembly (git + directory tree)
     # 2. Whisper model preload (if using local whisper)
-    import time as _time
-
     t0 = _time.monotonic()
     loop = asyncio.get_running_loop()
 
     async def _assemble_context() -> str:
         assembler = ContextAssembler(
-            settings.general, settings.mcp, context_settings=settings.context,
+            settings.general,
+            settings.mcp,
+            context_settings=settings.context,
         )
         return await loop.run_in_executor(
             None,
@@ -230,6 +375,7 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
 
     context, _ = await asyncio.gather(context_task, stt_task)
     logger.info("Startup completed in %.2fs", _time.monotonic() - t0)
+    logger.info("Startup context assembled (chars=%d)", len(context))
 
     llm = create_llm_client(settings.llm, project_context=context)
 
@@ -264,6 +410,7 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
 
     while True:
         try:
+            turn_id = generate_turn_id()
             if use_voice:
                 display_state.phase = "listening"
                 try:
@@ -305,7 +452,17 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
                     continue
 
                 display_state.phase = "transcribing"
-                result = await stt.transcribe(audio, settings.stt.sample_rate)
+                with TurnContext(turn_id):
+                    stt_t0 = _time.monotonic()
+                    result = await stt.transcribe(audio, settings.stt.sample_rate)
+                    logger.info(
+                        "STT stage finished (samples=%d, elapsed_ms=%.0f, confidence=%s)",
+                        audio.size,
+                        (_time.monotonic() - stt_t0) * 1000,
+                        f"{result.confidence:.2f}" if result.confidence is not None else "n/a",
+                    )
+                    if settings.general.log_sensitive:
+                        logger.debug("STT transcription: %s", result.text)
                 question = result.text.strip()
                 if not question:
                     display.print_static("[yellow]Could not transcribe audio.[/yellow]")
@@ -322,6 +479,15 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
             if not question:
                 continue
 
+            with TurnContext(turn_id):
+                logger.info(
+                    "Turn started (mode=%s, question_chars=%d)",
+                    "voice" if use_voice else "text",
+                    len(question),
+                )
+                if settings.general.log_sensitive:
+                    logger.debug("User question: %s", question)
+
             display_state.question = question
             display_state.response_chunks.clear()
             display_state.phase = "thinking"
@@ -331,7 +497,8 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
             from vox_terminal.context.sources.inline import inject_file_context
 
             enriched_question = inject_file_context(
-                question, settings.general.project_root,
+                question,
+                settings.general.project_root,
             )
 
             # --- TTS playback (with optional barge-in) ---
@@ -350,11 +517,20 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
                 async def _speak_with_barge_in(
                     q: str = enriched_question,
                     h: list[Message] | None = history or None,
+                    current_turn_id: str = turn_id,
                 ) -> str:
                     """Run TTS while watching for speech on the mic."""
-                    tts_task = asyncio.create_task(
-                        _ask_and_speak(q, llm, tts, h, display_state=display_state)
-                    )
+                    with TurnContext(current_turn_id):
+                        tts_task = asyncio.create_task(
+                            _ask_and_speak(
+                                q,
+                                llm,
+                                tts,
+                                h,
+                                display_state=display_state,
+                                log_sensitive=settings.general.log_sensitive,
+                            )
+                        )
 
                     speech_event = capture.speech_started
                     # Grace period: ignore mic input for 1.5s to avoid
@@ -389,15 +565,11 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
                     display_state.phase = "listening"
                     display_state.response_chunks.clear()
                     try:
-                        interrupted_audio = await asyncio.wait_for(
-                            record_task, timeout=5.0
-                        )
+                        interrupted_audio = await asyncio.wait_for(record_task, timeout=5.0)
                     except TimeoutError:
                         logger.warning("Barge-in record timed out — cancelling")
                         capture.cancel_recording()
-                        with contextlib.suppress(
-                            AudioCaptureError, asyncio.CancelledError
-                        ):
+                        with contextlib.suppress(AudioCaptureError, asyncio.CancelledError):
                             await record_task
                 else:
                     # TTS finished naturally — cancel the mic monitor
@@ -411,10 +583,15 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
                                 await record_task
             else:
                 # Default path: no barge-in, TTS plays fully
-                response_text = await _ask_and_speak(
-                    enriched_question, llm, tts, history or None,
-                    display_state=display_state,
-                )
+                with TurnContext(turn_id):
+                    response_text = await _ask_and_speak(
+                        enriched_question,
+                        llm,
+                        tts,
+                        history or None,
+                        display_state=display_state,
+                        log_sensitive=settings.general.log_sensitive,
+                    )
 
             # Update history + persist
             display_state.phase = "idle"
@@ -431,29 +608,49 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
             # If user interrupted via barge-in, process their speech immediately
             if interrupted_audio is not None and interrupted_audio.size > 0:
                 display_state.phase = "transcribing"
-                result = await stt.transcribe(
-                    interrupted_audio, settings.stt.sample_rate
-                )
+                follow_up_turn_id = generate_turn_id()
+                with TurnContext(follow_up_turn_id):
+                    stt_t0 = _time.monotonic()
+                    result = await stt.transcribe(interrupted_audio, settings.stt.sample_rate)
+                    logger.info(
+                        "STT stage finished (barge_in=true, samples=%d, elapsed_ms=%.0f, confidence=%s)",
+                        interrupted_audio.size,
+                        (_time.monotonic() - stt_t0) * 1000,
+                        f"{result.confidence:.2f}" if result.confidence is not None else "n/a",
+                    )
+                    if settings.general.log_sensitive:
+                        logger.debug("STT transcription: %s", result.text)
                 question = result.text.strip()
                 if question and question.lower() not in ("q", "quit", "exit"):
+                    with TurnContext(follow_up_turn_id):
+                        logger.info(
+                            "Turn started (mode=barge-in, question_chars=%d)",
+                            len(question),
+                        )
+                        if settings.general.log_sensitive:
+                            logger.debug("User question: %s", question)
                     display_state.question = question
                     display_state.response_chunks.clear()
                     display_state.phase = "thinking"
 
                     enriched_question = inject_file_context(
-                        question, settings.general.project_root,
+                        question,
+                        settings.general.project_root,
                     )
-                    response_text = await _ask_and_speak(
-                        enriched_question, llm, tts, history or None,
-                        display_state=display_state,
-                    )
+                    with TurnContext(follow_up_turn_id):
+                        response_text = await _ask_and_speak(
+                            enriched_question,
+                            llm,
+                            tts,
+                            history or None,
+                            display_state=display_state,
+                            log_sensitive=settings.general.log_sensitive,
+                        )
 
                     display_state.phase = "idle"
                     if response_text:
                         history.append(Message(role="user", content=question))
-                        history.append(
-                            Message(role="assistant", content=response_text)
-                        )
+                        history.append(Message(role="assistant", content=response_text))
                         if store is not None and session_id is not None:
                             store.add_message(session_id, "user", question)
                             store.add_message(session_id, "assistant", response_text)
@@ -490,7 +687,7 @@ def main(
     if ctx.invoked_subcommand is not None:
         return
     settings = load_settings()
-    _configure_logging(settings.general.log_level)
+    _configure_logging(settings.general)
     if text:
         asyncio.run(_ask_once(text, settings))
     else:
@@ -503,7 +700,7 @@ def ask(
 ) -> None:
     """Ask a single question via text."""
     settings = load_settings()
-    _configure_logging(settings.general.log_level)
+    _configure_logging(settings.general)
     asyncio.run(_ask_once(text, settings))
 
 
@@ -514,7 +711,9 @@ def context(
     """Show the project context that would be sent to the LLM."""
     settings = load_settings()
     assembler = ContextAssembler(
-        settings.general, settings.mcp, context_settings=settings.context,
+        settings.general,
+        settings.mcp,
+        context_settings=settings.context,
     )
     ctx = assembler.assemble(
         include_git=settings.mcp.include_git,
@@ -525,6 +724,74 @@ def context(
             console.print(Panel(ctx, title="Project Context", border_style="green"))
         else:
             console.print("[yellow]No project context available.[/yellow]")
+
+
+@app.command()
+def logs(
+    tail: bool = typer.Option(False, "--tail", help="Follow log output"),
+    lines: int = typer.Option(100, "--lines", "-n", min=1, help="Show last N lines"),
+) -> None:
+    """Show Vox-Terminal logs from the rotating log file."""
+    settings = load_settings()
+    log_path = _resolve_log_file_path(settings.general)
+
+    if not log_path.is_file():
+        console.print(f"[yellow]No log file found at {log_path}[/yellow]")
+        return
+
+    def _read_lines() -> list[str]:
+        try:
+            return log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            return []
+
+    content = _read_lines()
+    for line in content[-lines:]:
+        console.print(line, highlight=False)
+
+    if not tail:
+        return
+
+    console.print(f"[dim]Tailing {log_path}. Press Ctrl+C to stop.[/dim]")
+    shown = len(content)
+    try:
+        while True:
+            _time.sleep(0.5)
+            updated = _read_lines()
+            if len(updated) > shown:
+                for line in updated[shown:]:
+                    console.print(line, highlight=False)
+                shown = len(updated)
+    except KeyboardInterrupt:
+        return
+
+
+@app.command()
+def diagnose(
+    no_audio: bool = typer.Option(
+        False,
+        "--no-audio",
+        help="Skip audible TTS playback check",
+    ),
+) -> None:
+    """Run a quick health check across context, STT, LLM, and TTS."""
+    settings = load_settings()
+    _configure_logging(settings.general)
+
+    results = asyncio.run(_run_diagnostics(settings, no_audio=no_audio))
+    has_failure = False
+    for stage, ok, detail, elapsed_ms in results:
+        status = "OK" if ok else "FAIL"
+        style = "green" if ok else "red"
+        if not ok:
+            has_failure = True
+        console.print(
+            f"[{style}]{stage.upper():<8} {status}[/{style}] "
+            f"{detail} ({elapsed_ms:.0f} ms)"
+        )
+
+    if has_failure:
+        raise typer.Exit(code=1)
 
 
 @app.command()
