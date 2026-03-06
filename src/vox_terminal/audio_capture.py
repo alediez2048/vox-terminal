@@ -203,9 +203,15 @@ class AudioCapture:
 
         # Determine speech presence via injected VAD or legacy RMS
         if self._vad is not None:
-            result = self._vad.is_speech(indata, self._sample_rate)
-            is_speech = result.is_speech
-            level = result.confidence
+            try:
+                result = self._vad.is_speech(indata, self._sample_rate)
+                is_speech = result.is_speech
+                level = result.confidence
+            except Exception:
+                # Silero rejects chunks that are too short — fall back to RMS
+                rms = float(np.sqrt(np.mean(indata**2)))
+                is_speech = rms > self._silence_threshold
+                level = min(1.0, rms * 10.0)
         else:
             rms = float(np.sqrt(np.mean(indata**2)))
             is_speech = rms > self._silence_threshold

@@ -6,19 +6,16 @@ import asyncio
 import contextlib
 import logging
 from collections import deque
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from rich.columns import Columns
 from rich.console import Console, Group
-from rich.layout import Layout
 from rich.live import Live
+from rich.rule import Rule
 from rich.text import Text
 
 from vox_terminal.tui.state import DisplayState
 from vox_terminal.tui.widgets import ResponsePanel, SoundBar, StateSpinner, StatusBar
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +26,8 @@ class SessionDisplay:
     """Manages a persistent Rich Live display for the interactive session.
 
     One Live display runs for the entire ``_interactive_loop`` lifetime.
-    A Layout splits into *body* (swaps per state) and *footer* (always-visible
-    status bar).  An async refresh loop at ~15 fps reads shared state and
-    rebuilds the layout.
+    A Group of body + footer is rebuilt each frame.  An async refresh loop
+    at ~15 fps reads shared state and updates the Live renderable.
     """
 
     def __init__(
@@ -54,16 +50,11 @@ class SessionDisplay:
     async def start(self, capture: Any | None = None) -> None:
         """Enter the Live display and start the async refresh loop."""
         self._capture = capture
-        layout = Layout()
-        layout.split_column(
-            Layout(name="body", ratio=1),
-            Layout(name="footer", size=1),
-        )
         self._live = Live(
-            layout,
+            self._build_display(),
             console=self._console,
             refresh_per_second=15,
-            transient=False,
+            transient=True,
         )
         self._live.start()
         self._running = True
@@ -107,18 +98,21 @@ class SessionDisplay:
     # ------------------------------------------------------------------
 
     async def _refresh_loop(self) -> None:
-        """Rebuild the layout at ~15 fps from shared state."""
+        """Rebuild the display at ~15 fps from shared state."""
         while self._running:
             try:
                 self._update_audio_level()
                 if self._live is not None and self._live.is_started:
-                    renderable = self._live.renderable
-                    if isinstance(renderable, Layout):
-                        renderable["body"].update(self._render_body())
-                        renderable["footer"].update(StatusBar(self.state))
+                    self._live.update(self._build_display())
             except Exception:
                 logger.debug("Display refresh error", exc_info=True)
             await asyncio.sleep(_REFRESH_INTERVAL)
+
+    def _build_display(self) -> Group:
+        """Build a Group of body + separator + footer."""
+        body = self._render_body()
+        footer = StatusBar(self.state)
+        return Group(body, Rule(style="dim"), footer)
 
     def _update_audio_level(self) -> None:
         """Read the current audio level from the capture device."""
