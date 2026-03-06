@@ -44,7 +44,7 @@ class STTSettings(BaseModel):
     speech_start_threshold: float | None = None
     speech_end_threshold: float | None = None
     silence_duration: float = 0.7
-    silence_duration_after_speech: float = 0.5
+    silence_duration_after_speech: float = 0.8
     adaptive_endpointing: bool = True
     max_record_duration: float = 30.0
     vad_engine: Literal["silero", "energy"] = "silero"
