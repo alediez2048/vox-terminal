@@ -1,0 +1,26 @@
+---
+description: Vox Terminal project conventions and stack
+alwaysApply: true
+---
+
+# Vox Terminal — Project Conventions
+
+## Stack
+- Python 3.10+, hatchling build, `pip install -e ".[dev,vad]"`
+- CLI: typer + rich, entry point `vox_terminal.cli:app_main`
+- Config: pydantic-settings (env `VOX_TERMINAL_*` + `vox-terminal.toml`)
+- LLM: Anthropic Claude, STT: faster-whisper/OpenAI, TTS: macOS say/ElevenLabs/OpenAI
+- Testing: pytest + pytest-asyncio, `asyncio_mode = "auto"`
+- Linting: ruff (line-length 100), mypy (strict), pre-commit
+
+## Key Paths
+- Source: `src/vox_terminal/`
+- Tests: `tests/` (unit/, integration/, contracts/)
+- Config: `pyproject.toml`
+
+## Commits
+Use [Conventional Commits](https://www.conventionalcommits.org/):
+- `feat(tts): add ElevenLabs streaming`
+- `fix(audio): handle PortAudio errors`
+- `test(llm): add timeout contract`
+- `docs: update configuration table`

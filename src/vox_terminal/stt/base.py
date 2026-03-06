@@ -21,8 +21,6 @@ class STTEngine(ABC):
     """Abstract base for all STT provider engines."""
 
     @abstractmethod
-    async def transcribe(
-        self, audio: np.ndarray, sample_rate: int = 16000
-    ) -> TranscriptionResult:
+    async def transcribe(self, audio: np.ndarray, sample_rate: int = 16000) -> TranscriptionResult:
         """Transcribe *audio* (float32 numpy array) and return the result."""
         ...  # pragma: no cover

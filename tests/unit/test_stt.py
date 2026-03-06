@@ -9,10 +9,9 @@ import numpy as np
 import pytest
 
 from vox_terminal.config import STTSettings
-from vox_terminal.stt import STTEngine, TranscriptionResult, create_stt_engine
+from vox_terminal.stt import TranscriptionResult, create_stt_engine
 from vox_terminal.stt.openai_stt import OpenAISTT
 from vox_terminal.stt.whisper_local import WhisperLocalSTT
-
 
 # ------------------------------------------------------------------
 # TranscriptionResult dataclass

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time as _time
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 
@@ -11,14 +12,14 @@ logger = logging.getLogger(__name__)
 
 # Patterns that sound bad when read aloud by TTS
 _MARKDOWN_RE = re.compile(
-    r"\*{1,3}"       # bold / italic markers
-    r"|`{1,3}"       # inline code / code fences
-    r"|^#{1,6}\s"    # heading markers
-    r"|^[-*]\s"      # bullet list markers
-    r"|^\d+\.\s"     # numbered list markers
-    r"|^>\s"         # blockquote markers
-    r"|\[([^\]]*)\]\([^)]*\)"  # markdown links → keep link text
-    , re.MULTILINE,
+    r"\*{1,3}"  # bold / italic markers
+    r"|`{1,3}"  # inline code / code fences
+    r"|^#{1,6}\s"  # heading markers
+    r"|^[-*]\s"  # bullet list markers
+    r"|^\d+\.\s"  # numbered list markers
+    r"|^>\s"  # blockquote markers
+    r"|\[([^\]]*)\]\([^)]*\)",  # markdown links → keep link text
+    re.MULTILINE,
 )
 
 
@@ -68,6 +69,9 @@ class TTSEngine(ABC):
         """
         self._interrupted = False
         buffer = ""
+        spoken_sentences = 0
+        spoken_chars = 0
+        t0 = _time.monotonic()
         async for chunk in chunks:
             if self._interrupted:
                 break
@@ -88,6 +92,8 @@ class TTSEngine(ABC):
                     sentence = _sanitize_for_speech(sentence)
                     if sentence:
                         await self.speak(sentence)
+                        spoken_sentences += 1
+                        spoken_chars += len(sentence)
         if not self._interrupted:
             # Flush remaining
             remaining = buffer.strip()
@@ -95,6 +101,15 @@ class TTSEngine(ABC):
                 remaining = _sanitize_for_speech(remaining)
                 if remaining:
                     await self.speak(remaining)
+                    spoken_sentences += 1
+                    spoken_chars += len(remaining)
+        logger.info(
+            "TTS streamed output (sentences=%d, chars=%d, interrupted=%s, elapsed_ms=%.0f)",
+            spoken_sentences,
+            spoken_chars,
+            self._interrupted,
+            (_time.monotonic() - t0) * 1000,
+        )
 
 
 class FallbackTTSEngine(TTSEngine):

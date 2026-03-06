@@ -7,9 +7,7 @@ from vox_terminal.llm.base import LLMClient, LLMResponse, Message
 from vox_terminal.llm.claude import ClaudeLLMClient
 
 
-def create_llm_client(
-    settings: LLMSettings, project_context: str = ""
-) -> LLMClient:
+def create_llm_client(settings: LLMSettings, project_context: str = "") -> LLMClient:
     """Factory: build the appropriate LLM client from *settings*."""
     if settings.provider == "claude":
         return ClaudeLLMClient(settings, project_context)

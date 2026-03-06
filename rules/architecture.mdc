@@ -1,0 +1,29 @@
+---
+description: Pipeline and interface patterns for Vox Terminal
+globs: src/vox_terminal/**/*.py
+alwaysApply: false
+---
+
+# Architecture Patterns
+
+## Pipeline Flow
+```
+Audio + VAD → STT → Context Assembler → LLM (streaming) → TTS → Playback
+```
+
+## Design Principles
+- **Abstract interfaces**: Each stage (STT, TTS, VAD, LLM) has an ABC in `*/base.py`
+- **Factory functions**: `create_stt_engine()`, `create_tts_engine()`, etc. in `*/__init__.py`
+- **Streaming-first**: LLM output streams into TTS; buffer at sentence boundaries
+- **FallbackTTSEngine**: Wraps cloud TTS with macOS `say` fallback on error
+
+## Adding New Engines
+1. Implement the abstract interface (e.g. `STTEngine.transcribe`)
+2. Add factory branch in `create_*_engine()`
+3. Add config fields in `config.py` (pydantic-settings)
+4. Add tests in `tests/unit/test_<domain>.py`
+
+## Context Assembly
+- `ContextAssembler` coordinates git, tree, configs, README, files
+- Sources in `context/sources/`: git.py, tree.py, configs.py, files.py, inline.py
+- Size caps: per-file 50KB, total 200KB; exclude binaries and `.env`

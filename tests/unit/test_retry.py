@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-
 import pytest
 
 from vox_terminal.retry import retry_async
@@ -65,9 +63,7 @@ class TestRetryAsync:
                 raise ValueError("custom retryable")
             return "ok"
 
-        result = await retry_async(
-            fn, max_attempts=3, base_delay=0.01, retryable=(ValueError,)
-        )
+        result = await retry_async(fn, max_attempts=3, base_delay=0.01, retryable=(ValueError,))
         assert result == "ok"
         assert calls == 2
 

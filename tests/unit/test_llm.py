@@ -17,10 +17,10 @@ from vox_terminal.llm import (
     create_llm_client,
 )
 
-
 # ---------------------------------------------------------------------------
 # Dataclass tests
 # ---------------------------------------------------------------------------
+
 
 class TestMessage:
     """Tests for the Message dataclass."""
@@ -55,6 +55,7 @@ class TestLLMResponse:
 # ClaudeLLMClient tests
 # ---------------------------------------------------------------------------
 
+
 def _make_settings(**overrides: Any) -> LLMSettings:
     """Helper to create LLMSettings with sensible test defaults."""
     defaults: dict[str, Any] = {
@@ -73,7 +74,7 @@ class TestClaudeLLMClientInit:
     def test_creates_anthropic_client(self) -> None:
         settings = _make_settings()
         client = ClaudeLLMClient(settings, project_context="ctx")
-        assert client._client is not None  # noqa: SLF001
+        assert client._client is not None
 
     def test_system_prompt_includes_context(self) -> None:
         settings = _make_settings()
@@ -81,13 +82,14 @@ class TestClaudeLLMClientInit:
         prompt = client.system_prompt
         assert "Vox-Terminal" in prompt
         assert "Python web app" in prompt
-        assert "Project Context" in prompt
+        assert "<project_context>" in prompt
+        assert "untrusted repository data" in prompt
 
     def test_system_prompt_default_empty_context(self) -> None:
         settings = _make_settings()
         client = ClaudeLLMClient(settings)
         prompt = client.system_prompt
-        assert "Project Context" in prompt
+        assert "<project_context>" in prompt
 
     def test_is_llm_client(self) -> None:
         settings = _make_settings()
@@ -99,7 +101,7 @@ class TestClaudeLLMClientBuildMessages:
     """Tests for internal message building."""
 
     def test_prompt_only(self) -> None:
-        messages = ClaudeLLMClient._build_messages("Hello", None)  # noqa: SLF001
+        messages = ClaudeLLMClient._build_messages("Hello", None)
         assert messages == [{"role": "user", "content": "Hello"}]
 
     def test_with_history(self) -> None:
@@ -107,7 +109,7 @@ class TestClaudeLLMClientBuildMessages:
             Message(role="user", content="Hi"),
             Message(role="assistant", content="Hello!"),
         ]
-        messages = ClaudeLLMClient._build_messages("Follow up", history)  # noqa: SLF001
+        messages = ClaudeLLMClient._build_messages("Follow up", history)
         assert len(messages) == 3
         assert messages[0] == {"role": "user", "content": "Hi"}
         assert messages[1] == {"role": "assistant", "content": "Hello!"}
@@ -140,9 +142,9 @@ class TestClaudeLLMClientStream:
         stream_cm.__aenter__.return_value = stream_response
         stream_cm.__aexit__ = AsyncMock(return_value=False)
 
-        mock_client._client = MagicMock()  # noqa: SLF001
-        mock_client._client.messages = MagicMock()  # noqa: SLF001
-        mock_client._client.messages.stream = MagicMock(return_value=stream_cm)  # noqa: SLF001
+        mock_client._client = MagicMock()
+        mock_client._client.messages = MagicMock()
+        mock_client._client.messages.stream = MagicMock(return_value=stream_cm)
 
         collected: list[str] = []
         async for chunk in mock_client.stream("test prompt"):
@@ -153,7 +155,7 @@ class TestClaudeLLMClientStream:
     async def test_stream_passes_correct_params(self, mock_client: ClaudeLLMClient) -> None:
         async def _empty_stream() -> Any:
             return
-            yield  # noqa: RET504 — make this an async generator
+            yield
 
         stream_cm = AsyncMock()
         stream_response = MagicMock()
@@ -163,8 +165,8 @@ class TestClaudeLLMClientStream:
 
         mock_messages = MagicMock()
         mock_messages.stream = MagicMock(return_value=stream_cm)
-        mock_client._client = MagicMock()  # noqa: SLF001
-        mock_client._client.messages = mock_messages  # noqa: SLF001
+        mock_client._client = MagicMock()
+        mock_client._client.messages = mock_messages
 
         async for _ in mock_client.stream("hello"):
             pass
@@ -175,7 +177,31 @@ class TestClaudeLLMClientStream:
             temperature=0.3,
             system=mock_client.system_prompt,
             messages=[{"role": "user", "content": "hello"}],
+            cache_control={"type": "ephemeral"},
         )
+
+    async def test_stream_omits_cache_control_when_disabled(self, mock_client: ClaudeLLMClient) -> None:
+        async def _empty_stream() -> Any:
+            return
+            yield
+
+        stream_cm = AsyncMock()
+        stream_response = MagicMock()
+        stream_response.text_stream = _empty_stream()
+        stream_cm.__aenter__ = AsyncMock(return_value=stream_response)
+        stream_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_messages = MagicMock()
+        mock_messages.stream = MagicMock(return_value=stream_cm)
+        mock_client._client = MagicMock()
+        mock_client._client.messages = mock_messages
+        object.__setattr__(mock_client._settings, "prompt_caching_enabled", False)
+
+        async for _ in mock_client.stream("hello"):
+            pass
+
+        call_kwargs = mock_messages.stream.call_args.kwargs
+        assert "cache_control" not in call_kwargs
 
 
 class TestClaudeLLMClientAsk:
@@ -197,9 +223,9 @@ class TestClaudeLLMClientAsk:
         stream_cm.__aenter__ = AsyncMock(return_value=stream_response)
         stream_cm.__aexit__ = AsyncMock(return_value=False)
 
-        client._client = MagicMock()  # noqa: SLF001
-        client._client.messages = MagicMock()  # noqa: SLF001
-        client._client.messages.stream = MagicMock(return_value=stream_cm)  # noqa: SLF001
+        client._client = MagicMock()
+        client._client.messages = MagicMock()
+        client._client.messages.stream = MagicMock(return_value=stream_cm)
 
         response = await client.ask("test")
 
@@ -211,6 +237,7 @@ class TestClaudeLLMClientAsk:
 # ---------------------------------------------------------------------------
 # Factory tests
 # ---------------------------------------------------------------------------
+
 
 class TestCreateLLMClient:
     """Tests for the create_llm_client factory function."""
@@ -232,6 +259,7 @@ class TestCreateLLMClient:
 # Timeout tests
 # ---------------------------------------------------------------------------
 
+
 class TestClaudeLLMClientTimeout:
     async def test_stream_timeout_raises(self) -> None:
         settings = _make_settings(stream_timeout=0.1)
@@ -247,9 +275,9 @@ class TestClaudeLLMClientTimeout:
         stream_cm.__aenter__ = AsyncMock(return_value=stream_response)
         stream_cm.__aexit__ = AsyncMock(return_value=False)
 
-        client._client = MagicMock()  # noqa: SLF001
-        client._client.messages = MagicMock()  # noqa: SLF001
-        client._client.messages.stream = MagicMock(return_value=stream_cm)  # noqa: SLF001
+        client._client = MagicMock()
+        client._client.messages = MagicMock()
+        client._client.messages.stream = MagicMock(return_value=stream_cm)
 
         with pytest.raises(TimeoutError):
             async for _ in client.stream("test"):

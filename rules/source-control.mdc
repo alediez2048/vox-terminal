@@ -1,0 +1,27 @@
+---
+description: Source control and Git best practices
+alwaysApply: true
+---
+
+# Source Control
+
+## Commits
+- Use [Conventional Commits](https://www.conventionalcommits.org/): `type(scope): description`
+- Types: `feat`, `fix`, `test`, `docs`, `chore`, `refactor`
+- Scope: module or area (e.g. `tts`, `audio`, `llm`, `config`)
+- Keep commits atomic: one logical change per commit
+
+## Branching
+- `main` is the default branch; keep it deployable
+- Feature branches: `feat/description` or `fix/description`
+- Branch from latest `main`; rebase or merge before opening PR
+
+## Before Committing
+- Run `ruff check src/` and `ruff format src/`
+- Run `mypy src/`
+- Run `pytest tests/ -v` — all tests must pass
+- Pre-commit hooks enforce: ruff, mypy, detect-secrets, conventional commit message
+
+## PRs
+- Small, focused PRs; link to issue if applicable
+- Ensure CI passes; address review feedback before merging

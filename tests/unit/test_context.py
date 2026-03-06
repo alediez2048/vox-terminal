@@ -24,33 +24,40 @@ from vox_terminal.context.sources.git import (
 )
 from vox_terminal.context.sources.tree import get_directory_tree
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _init_git_repo(root: Path) -> None:
     """Initialise a throwaway git repo with one commit."""
     subprocess.run(["git", "init"], cwd=root, capture_output=True, check=True)
     subprocess.run(
         ["git", "config", "user.email", "test@test.com"],
-        cwd=root, capture_output=True, check=True,
+        cwd=root,
+        capture_output=True,
+        check=True,
     )
     subprocess.run(
         ["git", "config", "user.name", "Test"],
-        cwd=root, capture_output=True, check=True,
+        cwd=root,
+        capture_output=True,
+        check=True,
     )
     (root / "hello.txt").write_text("hello\n")
     subprocess.run(["git", "add", "."], cwd=root, capture_output=True, check=True)
     subprocess.run(
         ["git", "commit", "-m", "Initial commit"],
-        cwd=root, capture_output=True, check=True,
+        cwd=root,
+        capture_output=True,
+        check=True,
     )
 
 
 # ---------------------------------------------------------------------------
 # Git source tests
 # ---------------------------------------------------------------------------
+
 
 class TestGitSource:
     def test_branch_in_repo(self, tmp_path: Path) -> None:
@@ -101,6 +108,7 @@ class TestGitSource:
 # Tree source tests
 # ---------------------------------------------------------------------------
 
+
 class TestTreeSource:
     def test_basic_tree(self, tmp_path: Path) -> None:
         (tmp_path / "a.txt").write_text("a")
@@ -144,6 +152,7 @@ class TestTreeSource:
 # ---------------------------------------------------------------------------
 # Config source tests
 # ---------------------------------------------------------------------------
+
 
 class TestConfigSource:
     def test_detect_pyproject(self, tmp_path: Path) -> None:
@@ -219,6 +228,7 @@ class TestConfigSource:
 # File source tests
 # ---------------------------------------------------------------------------
 
+
 class TestFileSource:
     def test_resolve_glob_patterns(self, tmp_path: Path) -> None:
         (tmp_path / "src").mkdir()
@@ -265,7 +275,9 @@ class TestFileSource:
     def test_get_file_contents_skips_large(self, tmp_path: Path) -> None:
         (tmp_path / "big.txt").write_text("x" * 100_000)
         result = get_file_contents(
-            tmp_path, [tmp_path / "big.txt"], max_file_size=1000,
+            tmp_path,
+            [tmp_path / "big.txt"],
+            max_file_size=1000,
         )
         assert result == ""
 
@@ -285,7 +297,8 @@ class TestFileSource:
         (tmp_path / "x.py").write_text("x_content\n")
         (tmp_path / "y.py").write_text("y_content\n")
         result = get_file_contents(
-            tmp_path, [tmp_path / "x.py", tmp_path / "y.py"],
+            tmp_path,
+            [tmp_path / "x.py", tmp_path / "y.py"],
         )
         assert "x_content" in result
         assert "y_content" in result
@@ -298,6 +311,7 @@ class TestFileSource:
 # ---------------------------------------------------------------------------
 # Assembler tests
 # ---------------------------------------------------------------------------
+
 
 class TestContextAssembler:
     def test_assemble_with_configs(self, tmp_path: Path) -> None:
@@ -364,7 +378,8 @@ class TestContextAssembler:
             doc_patterns=[],
         )
         assembler = ContextAssembler(
-            general=general, context_settings=ctx_settings,
+            general=general,
+            context_settings=ctx_settings,
         )
         result = assembler.assemble(include_git=False, include_tree=False)
         assert "## Config file contents" in result
@@ -378,7 +393,8 @@ class TestContextAssembler:
             doc_patterns=["CHANGELOG.md"],
         )
         assembler = ContextAssembler(
-            general=general, context_settings=ctx_settings,
+            general=general,
+            context_settings=ctx_settings,
         )
         result = assembler.assemble(include_git=False, include_tree=False)
         assert "## Documentation" in result
@@ -394,7 +410,8 @@ class TestContextAssembler:
             include_files=["src/*.py"],
         )
         assembler = ContextAssembler(
-            general=general, context_settings=ctx_settings,
+            general=general,
+            context_settings=ctx_settings,
         )
         result = assembler.assemble(include_git=False, include_tree=False)
         assert "## Project files" in result
@@ -419,7 +436,8 @@ class TestContextAssembler:
             max_context_chars=100,
         )
         assembler = ContextAssembler(
-            general=general, context_settings=ctx_settings,
+            general=general,
+            context_settings=ctx_settings,
         )
         result = assembler.assemble(include_git=False, include_tree=False)
         # File content should be truncated to budget

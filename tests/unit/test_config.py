@@ -5,8 +5,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-import pytest
-
 from vox_terminal.config import (
     ContextSettings,
     GeneralSettings,
@@ -24,12 +22,28 @@ class TestGeneralSettings:
         s = GeneralSettings()
         assert s.verbose is False
         assert s.log_level == "INFO"
+        assert s.log_sensitive is False
+        assert s.log_file is None
+        assert s.log_rotate_max_bytes == 5_000_000
+        assert s.log_rotate_backup_count == 3
         assert s.barge_in_enabled is False
 
     def test_custom(self, tmp_path: Path) -> None:
-        s = GeneralSettings(project_root=tmp_path, verbose=True, log_level="DEBUG")
+        s = GeneralSettings(
+            project_root=tmp_path,
+            verbose=True,
+            log_level="DEBUG",
+            log_sensitive=True,
+            log_file=tmp_path / "vox.log",
+            log_rotate_max_bytes=1_024,
+            log_rotate_backup_count=2,
+        )
         assert s.project_root == tmp_path
         assert s.verbose is True
+        assert s.log_sensitive is True
+        assert s.log_file == tmp_path / "vox.log"
+        assert s.log_rotate_max_bytes == 1_024
+        assert s.log_rotate_backup_count == 2
 
 
 class TestSTTSettings:
@@ -47,6 +61,7 @@ class TestLLMSettings:
         assert s.max_tokens == 1024
         assert s.temperature == 0.3
         assert s.max_history_turns == 10
+        assert s.prompt_caching_enabled is True
 
 
 class TestTTSSettings:
@@ -69,27 +84,33 @@ class TestContextSettings:
     def test_defaults(self) -> None:
         s = ContextSettings()
         assert s.include_files == []
+        assert s.enabled_sources == []
         assert s.max_file_size == 50_000
         assert s.max_context_chars == 200_000
         assert s.read_config_files is True
         assert s.read_full_readme is True
+        assert s.skip_network_sources is False
         assert len(s.doc_patterns) > 0
         assert "CHANGELOG.md" in s.doc_patterns
 
     def test_custom_values(self) -> None:
         s = ContextSettings(
             include_files=["src/**/*.py"],
+            enabled_sources=["project_info", "git"],
             max_file_size=10_000,
             max_context_chars=50_000,
             read_config_files=False,
             read_full_readme=False,
+            skip_network_sources=True,
             doc_patterns=["NOTES.md"],
         )
         assert s.include_files == ["src/**/*.py"]
+        assert s.enabled_sources == ["project_info", "git"]
         assert s.max_file_size == 10_000
         assert s.max_context_chars == 50_000
         assert s.read_config_files is False
         assert s.read_full_readme is False
+        assert s.skip_network_sources is True
         assert s.doc_patterns == ["NOTES.md"]
 
 

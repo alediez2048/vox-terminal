@@ -4,13 +4,10 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from mcp.server.fastmcp import FastMCP
 
 from vox_terminal.llm.base import LLMResponse
 from vox_terminal.mcp_server import create_mcp_server
-
 
 # ---------------------------------------------------------------------------
 # Server creation
@@ -26,14 +23,14 @@ class TestCreateMCPServer:
 
     def test_server_has_expected_tools(self) -> None:
         server = create_mcp_server()
-        tools = server._tool_manager.list_tools()  # noqa: SLF001
+        tools = server._tool_manager.list_tools()
         tool_names = {t.name for t in tools}
         assert "ask_project_question" in tool_names
         assert "get_project_summary" in tool_names
 
     def test_server_has_exactly_two_tools(self) -> None:
         server = create_mcp_server()
-        tools = server._tool_manager.list_tools()  # noqa: SLF001
+        tools = server._tool_manager.list_tools()
         assert len(tools) == 2
 
 
@@ -56,9 +53,7 @@ class TestAskProjectQuestion:
         mock_llm.ask = AsyncMock(return_value=mock_response)
 
         with (
-            patch(
-                "vox_terminal.mcp_server.ContextAssembler"
-            ) as mock_assembler_cls,
+            patch("vox_terminal.mcp_server.ContextAssembler") as mock_assembler_cls,
             patch(
                 "vox_terminal.mcp_server.create_llm_client",
                 return_value=mock_llm,
@@ -68,15 +63,13 @@ class TestAskProjectQuestion:
             mock_assembler.assemble.return_value = "## Project info\n\nsome context\n"
             mock_assembler_cls.return_value = mock_assembler
 
-            result = await server._tool_manager.call_tool(  # noqa: SLF001
+            result = await server._tool_manager.call_tool(
                 "ask_project_question",
                 {"question": "What does this project do?"},
             )
 
             assert result == "This is a Python project."
-            mock_assembler.assemble.assert_called_once_with(
-                include_git=True, include_tree=True
-            )
+            mock_assembler.assemble.assert_called_once_with(include_git=True, include_tree=True)
             mock_create_llm.assert_called_once()
             mock_llm.ask.assert_awaited_once_with("What does this project do?")
 
@@ -88,9 +81,7 @@ class TestAskProjectQuestion:
         mock_llm.ask = AsyncMock(return_value=mock_response)
 
         with (
-            patch(
-                "vox_terminal.mcp_server.ContextAssembler"
-            ) as mock_assembler_cls,
+            patch("vox_terminal.mcp_server.ContextAssembler") as mock_assembler_cls,
             patch(
                 "vox_terminal.mcp_server.create_llm_client",
                 return_value=mock_llm,
@@ -100,7 +91,7 @@ class TestAskProjectQuestion:
             mock_assembler.assemble.return_value = ""
             mock_assembler_cls.return_value = mock_assembler
 
-            await server._tool_manager.call_tool(  # noqa: SLF001
+            await server._tool_manager.call_tool(
                 "ask_project_question",
                 {
                     "question": "hi",
@@ -109,9 +100,7 @@ class TestAskProjectQuestion:
                 },
             )
 
-            mock_assembler.assemble.assert_called_once_with(
-                include_git=False, include_tree=False
-            )
+            mock_assembler.assemble.assert_called_once_with(include_git=False, include_tree=False)
 
 
 # ---------------------------------------------------------------------------
@@ -127,14 +116,12 @@ class TestGetProjectSummary:
 
         expected_context = "## Project info\n\nA cool project\n"
 
-        with patch(
-            "vox_terminal.mcp_server.ContextAssembler"
-        ) as mock_assembler_cls:
+        with patch("vox_terminal.mcp_server.ContextAssembler") as mock_assembler_cls:
             mock_assembler = MagicMock()
             mock_assembler.assemble.return_value = expected_context
             mock_assembler_cls.return_value = mock_assembler
 
-            result = await server._tool_manager.call_tool(  # noqa: SLF001
+            result = await server._tool_manager.call_tool(
                 "get_project_summary",
                 {},
             )
@@ -145,14 +132,12 @@ class TestGetProjectSummary:
     async def test_returns_empty_when_no_context(self) -> None:
         server = create_mcp_server()
 
-        with patch(
-            "vox_terminal.mcp_server.ContextAssembler"
-        ) as mock_assembler_cls:
+        with patch("vox_terminal.mcp_server.ContextAssembler") as mock_assembler_cls:
             mock_assembler = MagicMock()
             mock_assembler.assemble.return_value = ""
             mock_assembler_cls.return_value = mock_assembler
 
-            result = await server._tool_manager.call_tool(  # noqa: SLF001
+            result = await server._tool_manager.call_tool(
                 "get_project_summary",
                 {},
             )

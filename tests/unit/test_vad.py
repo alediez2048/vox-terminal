@@ -6,16 +6,15 @@ import sys
 from unittest.mock import MagicMock, patch
 
 import numpy as np
-import pytest
 
 from vox_terminal.vad import create_vad_engine
 from vox_terminal.vad.base import VADEngine, VADResult
 from vox_terminal.vad.energy import EnergyVAD
 
-
 # ---------------------------------------------------------------------------
 # EnergyVAD
 # ---------------------------------------------------------------------------
+
 
 class TestEnergyVAD:
     def test_loud_audio_detected_as_speech(self) -> None:
@@ -53,6 +52,7 @@ class TestEnergyVAD:
 # ---------------------------------------------------------------------------
 # SileroVAD (mocked — avoids requiring torch)
 # ---------------------------------------------------------------------------
+
 
 class TestSileroVAD:
     def test_speech_detected_with_mocked_model(self) -> None:
@@ -92,6 +92,7 @@ class TestSileroVAD:
 # ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
+
 
 class TestCreateVADEngine:
     def test_energy_engine(self) -> None:

@@ -4,18 +4,23 @@ from __future__ import annotations
 
 from pathlib import Path
 
-_DEFAULT_IGNORE_DIRS: frozenset[str] = frozenset({
-    ".git",
-    "node_modules",
-    "__pycache__",
-    ".venv",
-    "dist",
-    "build",
-    ".eggs",
-    ".mypy_cache",
-    ".ruff_cache",
-    ".pytest_cache",
-})
+from vox_terminal.context.budget import ContextFragment
+from vox_terminal.context.sources.base import ContextSource, ContextSourceConfig
+
+_DEFAULT_IGNORE_DIRS: frozenset[str] = frozenset(
+    {
+        ".git",
+        "node_modules",
+        "__pycache__",
+        ".venv",
+        "dist",
+        "build",
+        ".eggs",
+        ".mypy_cache",
+        ".ruff_cache",
+        ".pytest_cache",
+    }
+)
 
 
 def get_directory_tree(
@@ -71,3 +76,29 @@ def _walk(
             _walk(entry, prefix + extension, max_depth, current_depth + 1, ignore_dirs, lines)
         else:
             lines.append(f"{prefix}{connector}{entry.name}")
+
+
+class TreeContextSource(ContextSource):
+    """Context source for depth-limited directory tree output."""
+
+    name = "tree"
+    priority = 50
+
+    def __init__(self, config: ContextSourceConfig) -> None:
+        super().__init__(config)
+        self._max_depth = config.tree_depth
+        self._include_tree = config.include_tree
+
+    def gather(self, project_root: Path) -> ContextFragment | None:
+        if not self._include_tree:
+            return None
+        content = get_directory_tree(project_root, max_depth=self._max_depth)
+        if not content:
+            return None
+        section = f"## Directory tree\n\n```\n{content}\n```"
+        return ContextFragment(
+            name=self.name,
+            content=section,
+            priority=self.priority,
+            token_estimate=max(1, len(section) // 4),
+        )
