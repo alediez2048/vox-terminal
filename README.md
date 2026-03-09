@@ -27,7 +27,8 @@ Voice-powered coding assistant for IDEs like Cursor, VS Code, and CLI agents lik
 - **Hands-free voice loop** — auto-listen, silence detection, transcribe, LLM, TTS, repeat
 - **Streaming TTS** — response starts playing while the LLM is still generating
 - **Sentence-buffered playback** — LLM chunks are buffered and spoken at sentence boundaries for natural delivery
-- **Barge-in support** (opt-in) — interrupt TTS mid-speech by talking, with hysteresis to prevent false triggers
+- **Spacebar interrupt** — press Space in the terminal to stop the agent mid-response (default on)
+- **Barge-in support** (opt-in) — interrupt TTS by talking (use with headphones), with hysteresis to prevent false triggers
 - **Conversation memory** — SQLite-backed history persists across sessions per project
 - **Project context injection** — git state, directory tree, config files, and README summary sent with every query
 - **Swappable engines** — STT, TTS, VAD, and LLM providers are behind abstract interfaces
@@ -85,37 +86,27 @@ User speaks → float32 audio (16kHz mono)
 
 ## Installation
 
-### Prerequisites
-
-- Python 3.10+ (tested on 3.10–3.14)
-- macOS (for `afplay`/`say` audio playback; Linux needs `ffplay`)
-- PortAudio (`brew install portaudio` for `sounddevice`)
-
-### Install
+### One-Command Install (macOS — recommended)
 
 ```bash
-# Clone the repo
-git clone https://github.com/alediez2048/vox-terminal.git
-cd vox-terminal
-
-# Create a virtual environment
-python -m venv .venv
-source .venv/bin/activate
-
-# Install with dev dependencies
-pip install -e ".[dev]"
-
-# Optional: install ML-based voice activity detection
-pip install -e ".[vad]"
+brew install portaudio && pip install vox-terminal
 ```
 
-### API Keys
+Or use the install script which handles everything:
 
-Set at minimum your Anthropic API key:
+```bash
+curl -fsSL https://raw.githubusercontent.com/jad/vox-terminal/main/install.sh | bash
+```
+
+### API Key
+
+Set your Anthropic API key (add to `~/.zshrc` to persist):
 
 ```bash
 export VOX_TERMINAL_LLM__API_KEY="sk-ant-..."
 ```
+
+### Optional API Keys
 
 For ElevenLabs TTS:
 
@@ -131,11 +122,32 @@ export VOX_TERMINAL_STT__OPENAI_API_KEY="sk-..."
 export VOX_TERMINAL_TTS__OPENAI_API_KEY="sk-..."
 ```
 
-Add these to `~/.zshrc` or `~/.bashrc` to persist across sessions.
+### Development Install
+
+```bash
+git clone https://github.com/alediez2048/vox-terminal.git
+cd vox-terminal
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+pip install -e ".[vad]"  # optional ML-based VAD
+```
 
 ---
 
 ## Quick Start
+
+### Start from any project (recommended)
+
+```bash
+cd /path/to/your/project
+vox-terminal start .
+```
+
+The `start` command resolves the project root, validates your API key, and launches the interactive voice loop — all in one step. You can also pass an absolute path:
+
+```bash
+vox-terminal start /path/to/your/project
+```
 
 ### Interactive voice mode (default)
 
@@ -163,17 +175,34 @@ vox-terminal context --preview
 vox-terminal serve
 ```
 
+### Target a different project from anywhere
+
+All commands accept `--project-root` (or `-p`) to explicitly target a project:
+
+```bash
+vox-terminal -p /path/to/project ask --text "What does this do?"
+vox-terminal -p /path/to/project context --preview
+vox-terminal -p /path/to/project serve
+```
+
+When `--project-root` is not provided, vox-terminal auto-detects the project root by walking up from the current directory looking for `vox-terminal.toml`, then a git root, then falls back to the current directory.
+
 ---
 
 ## CLI Commands
 
 | Command | Description |
 |---|---|
-| `vox-terminal` | Interactive voice loop (default) |
+| `vox-terminal start [path]` | Bootstrap and launch for a project (recommended) |
+| `vox-terminal` | Interactive voice loop (default, uses cwd) |
 | `vox-terminal --text "..."` | Ask a single text question |
 | `vox-terminal ask --text "..."` | Ask a single text question (explicit subcommand) |
 | `vox-terminal context [--preview/--no-preview]` | Show project context sent to the LLM |
+| `vox-terminal diagnose` | Health check across context, STT, LLM, and TTS |
 | `vox-terminal serve` | Start the MCP server (stdio transport) |
+| `vox-terminal logs [--tail]` | Show or follow the log file |
+
+All commands accept `--project-root PATH` (or `-p PATH`) to explicitly target a project directory.
 
 ---
 
@@ -198,6 +227,7 @@ Configuration is resolved in priority order:
 | `VOX_TERMINAL_GENERAL__MEMORY_DB_PATH` | `Path` | `~/.vox-terminal/conversations.db` | SQLite DB location |
 | `VOX_TERMINAL_GENERAL__MEMORY_MAX_MESSAGES` | `int` | `40` | Max messages loaded from history |
 | `VOX_TERMINAL_GENERAL__BARGE_IN_ENABLED` | `bool` | `false` | Allow voice interruption during TTS (use with headphones) |
+| `VOX_TERMINAL_GENERAL__SPACEBAR_INTERRUPT_ENABLED` | `bool` | `true` | Allow interrupting TTS by pressing Space in the terminal |
 
 #### Speech-to-Text (STT)
 
@@ -385,6 +415,7 @@ vox-terminal/
 │   ├── __init__.py                  # Package root, __version__ = "0.1.0"
 │   ├── cli.py                       # Typer app, interactive loop, CLI commands
 │   ├── config.py                    # Pydantic-settings (env vars + TOML)
+│   ├── project_root.py              # Auto-detect project root (toml → git → cwd)
 │   ├── retry.py                     # Async retry with exponential backoff
 │   ├── audio_capture.py             # Sounddevice recording + VAD integration
 │   ├── mcp_server.py                # FastMCP server (stdio)
@@ -431,6 +462,9 @@ vox-terminal/
 │   │   └── test_pipeline.py         # STT → LLM → TTS pipeline tests
 │   └── contracts/
 │       └── test_mcp_server.py       # MCP tool schema/contract tests
+├── Formula/
+│   └── vox-terminal.rb              # Homebrew formula
+├── install.sh                       # One-command macOS installer
 ├── pyproject.toml                   # Dependencies, build config, tool settings
 ├── .pre-commit-config.yaml          # ruff, mypy, detect-secrets, conventional commits
 ├── .gitignore

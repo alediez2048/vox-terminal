@@ -27,6 +27,7 @@ class GeneralSettings(BaseModel):
     barge_in_grace_max_seconds: float = 0.9
     barge_in_required_hits: int = 3
     barge_in_poll_interval_ms: int = 30
+    spacebar_interrupt_enabled: bool = True
 
 
 class STTSettings(BaseModel):
@@ -137,6 +138,21 @@ class VoxTerminalSettings(BaseSettings):
     context: ContextSettings = Field(default_factory=ContextSettings)
 
 
-def load_settings(**overrides: object) -> VoxTerminalSettings:
-    """Load settings from TOML file + environment variables."""
+def load_settings(
+    *, project_root: Path | None = None, **overrides: object
+) -> VoxTerminalSettings:
+    """Load settings from TOML file + environment variables.
+
+    Parameters
+    ----------
+    project_root:
+        Explicit project root override.  When provided, this takes precedence
+        over the ``VOX_TERMINAL_GENERAL__PROJECT_ROOT`` env var and the
+        ``Path.cwd()`` default.
+    """
+    if project_root is not None:
+        general = overrides.pop("general", {})
+        if isinstance(general, dict):
+            general.setdefault("project_root", project_root)
+        overrides["general"] = general
     return VoxTerminalSettings(**overrides)  # type: ignore[arg-type]
