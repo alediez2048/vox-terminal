@@ -31,6 +31,7 @@ class TestGeneralSettings:
         assert s.barge_in_grace_max_seconds == 0.9
         assert s.barge_in_required_hits == 3
         assert s.barge_in_poll_interval_ms == 30
+        assert s.spacebar_interrupt_enabled is True
 
     def test_custom(self, tmp_path: Path) -> None:
         s = GeneralSettings(

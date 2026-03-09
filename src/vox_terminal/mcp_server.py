@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from mcp.server.fastmcp import FastMCP
 
 from vox_terminal.config import load_settings
@@ -9,10 +11,10 @@ from vox_terminal.context.assembler import ContextAssembler
 from vox_terminal.llm import create_llm_client
 
 
-def create_mcp_server() -> FastMCP:
+def create_mcp_server(*, project_root: Path | None = None) -> FastMCP:
     """Create and return a configured FastMCP server with Vox-Terminal tools."""
     mcp = FastMCP("vox-terminal")
-    settings = load_settings()
+    settings = load_settings(project_root=project_root)
 
     @mcp.tool()
     async def ask_project_question(

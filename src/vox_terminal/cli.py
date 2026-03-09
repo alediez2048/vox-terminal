@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import select
 import sys
+import threading
 import time as _time
 from collections.abc import AsyncIterator
 from logging.handlers import RotatingFileHandler
@@ -30,6 +32,7 @@ from vox_terminal.observability import (
     generate_turn_id,
     get_current_turn_id,
 )
+from vox_terminal.project_root import resolve_project_root
 from vox_terminal.stt import create_stt_engine
 from vox_terminal.tts import create_tts_engine
 from vox_terminal.tts.base import TTSEngine
@@ -135,6 +138,63 @@ def _log_turn_waterfall(
         f"{key}={snapshot[key]:.1f}" for key in sorted(snapshot)
     )
     logger.info("%s %s", label, fields)
+
+
+def _spacebar_watcher_thread(
+    tts: TTSEngine,
+    space_pressed: asyncio.Event,
+    stop_event: threading.Event,
+) -> None:
+    """Background thread: wait for spacebar, then call tts.interrupt() and set space_pressed.
+    Exits when stop_event is set or space is pressed. Unix + TTY only.
+    """
+    if not sys.stdin.isatty():
+        return
+    try:
+        import termios
+        import tty
+
+        fd = sys.stdin.fileno()
+        old = termios.tcgetattr(fd)
+        try:
+            tty.setcbreak(fd)
+            while not stop_event.is_set():
+                r, _, _ = select.select([sys.stdin], [], [], 0.2)
+                if r and sys.stdin in r:
+                    key = sys.stdin.read(1)
+                    if key == " ":
+                        tts.interrupt()
+                        space_pressed.set()
+                        break
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old)
+    except (ImportError, OSError, AttributeError):
+        pass
+
+
+async def _wait_for_spacebar_interrupt(
+    tts: TTSEngine,
+    stop_event: threading.Event,
+) -> None:
+    """Run until user presses space (then interrupt TTS) or stop_event is set.
+    No-op if stdin is not a TTY or on Windows.
+    """
+    if not sys.stdin.isatty() or sys.platform == "win32":
+        await asyncio.Event().wait()  # never completes; caller will cancel us
+        return
+    space_pressed = asyncio.Event()
+    thread = threading.Thread(
+        target=_spacebar_watcher_thread,
+        args=(tts, space_pressed, stop_event),
+        daemon=True,
+    )
+    thread.start()
+    try:
+        await space_pressed.wait()
+    except asyncio.CancelledError:
+        pass
+    finally:
+        stop_event.set()
 
 
 def _build_interactive_context_settings(base: ContextSettings) -> ContextSettings:
@@ -442,6 +502,11 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
     display_state = DisplayState(model_name=settings.llm.model)
     display = SessionDisplay(display_state, console=console)
 
+    space_hint = (
+        " Press [bold]Space[/bold] during a response to interrupt."
+        if settings.general.spacebar_interrupt_enabled and sys.stdin.isatty()
+        else ""
+    )
     console.print(
         Panel(
             "[bold]Vox-Terminal[/bold] — Voice assistant for your project\n"
@@ -450,7 +515,8 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
                 "Press [bold]Ctrl+C[/bold] to quit."
                 if use_voice
                 else "Type your question, or [bold]q[/bold] to quit."
-            ),
+            )
+            + space_hint,
             title="Vox-Terminal",
             border_style="cyan",
         )
@@ -677,7 +743,7 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
                     current_turn_id: str = turn_id,
                     waterfall: TurnWaterfall = turn_waterfall,
                 ) -> tuple[str, bool]:
-                    """Run TTS while watching for speech on the mic."""
+                    """Run TTS while watching for speech on the mic and/or spacebar."""
                     with TurnContext(current_turn_id):
                         tts_task = asyncio.create_task(
                             _ask_and_speak(
@@ -689,6 +755,13 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
                                 log_sensitive=settings.general.log_sensitive,
                                 waterfall=waterfall,
                             )
+                        )
+
+                    stop_event = threading.Event()
+                    space_task: asyncio.Task[None] | None = None
+                    if settings.general.spacebar_interrupt_enabled:
+                        space_task = asyncio.create_task(
+                            _wait_for_spacebar_interrupt(tts, stop_event)
                         )
 
                     speech_event = capture.speech_started
@@ -717,6 +790,9 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
                     interrupted_by_user = False
 
                     while not tts_task.done():
+                        if space_task is not None and space_task.done():
+                            interrupted_by_user = True
+                            break
                         if speech_event is not None and speech_event.is_set():
                             now = _time.monotonic()
                             speech_hits += 1
@@ -734,6 +810,12 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
                         else:
                             consecutive_hits = 0
                         await asyncio.sleep(poll_interval)
+
+                    stop_event.set()
+                    if space_task is not None and not space_task.done():
+                        space_task.cancel()
+                        with contextlib.suppress(asyncio.CancelledError):
+                            await space_task
 
                     response = await tts_task
                     if (
@@ -788,17 +870,36 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
                             with contextlib.suppress(asyncio.CancelledError):
                                 await record_task
             else:
-                # Default path: no barge-in, TTS plays fully
+                # Default path: TTS with optional spacebar-to-interrupt
                 with TurnContext(turn_id):
-                    response_text = await _ask_and_speak(
-                        enriched_question,
-                        llm,
-                        tts,
-                        history or None,
-                        display_state=display_state,
-                        log_sensitive=settings.general.log_sensitive,
-                        waterfall=turn_waterfall,
+                    stop_event = threading.Event()
+                    tts_task = asyncio.create_task(
+                        _ask_and_speak(
+                            enriched_question,
+                            llm,
+                            tts,
+                            history or None,
+                            display_state=display_state,
+                            log_sensitive=settings.general.log_sensitive,
+                            waterfall=turn_waterfall,
+                        )
                     )
+                    if settings.general.spacebar_interrupt_enabled:
+                        space_task = asyncio.create_task(
+                            _wait_for_spacebar_interrupt(tts, stop_event)
+                        )
+                        done, pending = await asyncio.wait(
+                            [tts_task, space_task],
+                            return_when=asyncio.FIRST_COMPLETED,
+                        )
+                        stop_event.set()
+                        for t in pending:
+                            t.cancel()
+                            with contextlib.suppress(asyncio.CancelledError):
+                                await t
+                    else:
+                        await tts_task
+                    response_text = await tts_task
 
             # Update history + persist
             display_state.phase = "idle"
@@ -897,6 +998,38 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Shared option — resolved once in the callback, stored in ctx.obj
+# ---------------------------------------------------------------------------
+
+_project_root_option = typer.Option(
+    None,
+    "--project-root",
+    "-p",
+    help="Explicit project root directory. "
+    "Resolved automatically via vox-terminal.toml / git root / cwd when omitted.",
+    exists=True,
+    file_okay=False,
+    resolve_path=True,
+)
+
+_project_path_argument = typer.Argument(
+    None,
+    help="Path to the project directory (default: auto-detect from cwd).",
+    exists=True,
+    file_okay=False,
+    resolve_path=True,
+)
+
+
+def _resolve_settings(
+    project_root: Path | None = None,
+) -> VoxTerminalSettings:
+    """Load settings with the resolved project root threaded in."""
+    resolved = resolve_project_root(project_root)
+    return load_settings(project_root=resolved)
+
+
+# ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
 
@@ -905,11 +1038,15 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
 def main(
     ctx: typer.Context,
     text: str | None = typer.Option(None, "--text", "-t", help="Ask a text question"),
+    project_root: Path | None = _project_root_option,
 ) -> None:
     """Terminal voice assistant for Cursor IDE."""
     if ctx.invoked_subcommand is not None:
+        # Store for subcommands that need it
+        ctx.ensure_object(dict)
+        ctx.obj["project_root"] = project_root
         return
-    settings = load_settings()
+    settings = _resolve_settings(project_root)
     _configure_logging(settings.general)
     if text:
         asyncio.run(_ask_once(text, settings))
@@ -918,33 +1055,80 @@ def main(
 
 
 @app.command()
+def start(
+    ctx: typer.Context,
+    project_path: Path | None = _project_path_argument,
+) -> None:
+    """Bootstrap and launch vox-terminal for a project.
+
+    Resolves the project root, validates prerequisites, then starts the
+    interactive voice loop.  Designed for one-command usage from any repo:
+
+        vox-terminal start .
+        vox-terminal start /path/to/my-project
+    """
+    parent_root = (ctx.obj or {}).get("project_root")
+    explicit = project_path or parent_root
+    settings = _resolve_settings(explicit)
+    _configure_logging(settings.general)
+
+    root = settings.general.project_root
+    console.print(
+        Panel(
+            f"[bold]Project:[/bold] {root}\n"
+            f"[bold]LLM:[/bold]     {settings.llm.model}\n"
+            f"[bold]STT:[/bold]     {settings.stt.engine}\n"
+            f"[bold]TTS:[/bold]     {settings.tts.engine}",
+            title="Vox-Terminal Bootstrap",
+            border_style="cyan",
+        )
+    )
+
+    if not settings.llm.api_key:
+        console.print(
+            "[red]No API key configured.[/red]\n"
+            '  export VOX_TERMINAL_LLM__API_KEY="your-anthropic-key"\n'
+            "[dim]Add it to ~/.zshrc to persist across sessions.[/dim]"
+        )
+        raise typer.Exit(code=1)
+
+    asyncio.run(_interactive_loop(settings))
+
+
+@app.command()
 def ask(
+    ctx: typer.Context,
     text: str = typer.Option(..., "--text", "-t", help="Question to ask"),
+    project_root: Path | None = _project_root_option,
 ) -> None:
     """Ask a single question via text."""
-    settings = load_settings()
+    explicit = project_root or (ctx.obj or {}).get("project_root")
+    settings = _resolve_settings(explicit)
     _configure_logging(settings.general)
     asyncio.run(_ask_once(text, settings))
 
 
 @app.command()
 def context(
+    ctx: typer.Context,
     preview: bool = typer.Option(True, "--preview/--no-preview", help="Print context"),
+    project_root: Path | None = _project_root_option,
 ) -> None:
     """Show the project context that would be sent to the LLM."""
-    settings = load_settings()
+    explicit = project_root or (ctx.obj or {}).get("project_root")
+    settings = _resolve_settings(explicit)
     assembler = ContextAssembler(
         settings.general,
         settings.mcp,
         context_settings=settings.context,
     )
-    ctx = assembler.assemble(
+    ctx_text = assembler.assemble(
         include_git=settings.mcp.include_git,
         include_tree=settings.mcp.include_tree,
     )
     if preview:
-        if ctx:
-            console.print(Panel(ctx, title="Project Context", border_style="green"))
+        if ctx_text:
+            console.print(Panel(ctx_text, title="Project Context", border_style="green"))
         else:
             console.print("[yellow]No project context available.[/yellow]")
 
@@ -991,6 +1175,7 @@ def logs(
 
 @app.command()
 def diagnose(
+    ctx: typer.Context,
     no_audio: bool = typer.Option(
         False,
         "--no-audio",
@@ -1012,9 +1197,11 @@ def diagnose(
         "--minimal-context",
         help="Use a lightweight context profile during diagnostics",
     ),
+    project_root: Path | None = _project_root_option,
 ) -> None:
     """Run a quick health check across context, STT, LLM, and TTS."""
-    settings = load_settings()
+    explicit = project_root or (ctx.obj or {}).get("project_root")
+    settings = _resolve_settings(explicit)
     _configure_logging(settings.general)
 
     logger.info(
@@ -1090,12 +1277,17 @@ def diagnose(
 
 
 @app.command()
-def serve() -> None:
+def serve(
+    ctx: typer.Context,
+    project_root: Path | None = _project_root_option,
+) -> None:
     """Start the MCP server for Cursor integration."""
     try:
         from vox_terminal.mcp_server import create_mcp_server
 
-        server = create_mcp_server()
+        explicit = project_root or (ctx.obj or {}).get("project_root")
+        resolved = resolve_project_root(explicit)
+        server = create_mcp_server(project_root=resolved)
         server.run(transport="stdio")
     except ImportError:
         console.print("[red]MCP server dependencies not available.[/red]")

@@ -10,7 +10,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from typer.testing import CliRunner
 
-from vox_terminal.cli import _ask_and_speak, _ask_once, _build_interactive_context_settings, app
+from vox_terminal.cli import (
+    _ask_and_speak,
+    _ask_once,
+    _build_interactive_context_settings,
+    _resolve_settings,
+    app,
+)
 from vox_terminal.config import ContextSettings, VoxTerminalSettings
 from vox_terminal.llm.base import LLMClient
 from vox_terminal.tts.base import TTSEngine
@@ -352,6 +358,61 @@ class TestAskAndSpeak:
 
         result = await _ask_and_speak("Hi", mock_llm, MockTTS())
         assert result == "Partial "
+
+
+class TestStartCommand:
+    """Tests for the ``start`` bootstrap command."""
+
+    @patch("vox_terminal.cli._interactive_loop", new_callable=AsyncMock)
+    def test_start_launches_interactive_loop(
+        self, mock_loop: AsyncMock, project_root
+    ) -> None:
+        result = runner.invoke(app, ["start", str(project_root)])
+        assert result.exit_code == 0
+        mock_loop.assert_awaited_once()
+
+    def test_start_fails_without_api_key(self, project_root, clean_env) -> None:
+        with patch.dict(os.environ, {"VOX_TERMINAL_LLM__API_KEY": ""}, clear=False):
+            result = runner.invoke(app, ["start", str(project_root)])
+        assert result.exit_code == 1
+        assert "No API key" in result.output
+
+    @patch("vox_terminal.cli._interactive_loop", new_callable=AsyncMock)
+    def test_start_prints_project_path(
+        self, mock_loop: AsyncMock, project_root
+    ) -> None:
+        result = runner.invoke(app, ["start", str(project_root)])
+        assert str(project_root) in result.output
+
+    @patch("vox_terminal.cli._interactive_loop", new_callable=AsyncMock)
+    def test_start_defaults_to_auto_detect(self, mock_loop: AsyncMock) -> None:
+        result = runner.invoke(app, ["start"])
+        assert result.exit_code == 0
+
+
+class TestProjectRootOption:
+    """Tests for the ``--project-root`` / ``-p`` CLI option."""
+
+    def test_context_with_project_root(self, project_root) -> None:
+        result = runner.invoke(
+            app, ["--project-root", str(project_root), "context", "--preview"]
+        )
+        assert result.exit_code == 0
+
+    @patch("vox_terminal.cli._ask_once", new_callable=AsyncMock)
+    def test_ask_with_project_root(
+        self, mock_ask: AsyncMock, project_root
+    ) -> None:
+        mock_ask.return_value = ""
+        result = runner.invoke(
+            app,
+            ["--project-root", str(project_root), "ask", "--text", "hi"],
+        )
+        assert result.exit_code == 0
+
+    def test_resolve_settings_threads_project_root(self, project_root) -> None:
+        settings = _resolve_settings(project_root)
+        assert settings.general.project_root == project_root
 
 
 class TestAskOnce:
