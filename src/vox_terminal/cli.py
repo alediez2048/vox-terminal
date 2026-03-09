@@ -142,11 +142,15 @@ def _log_turn_waterfall(
 
 def _spacebar_watcher_thread(
     tts: TTSEngine,
+    loop: asyncio.AbstractEventLoop,
     space_pressed: asyncio.Event,
     stop_event: threading.Event,
 ) -> None:
-    """Background thread: wait for spacebar, then call tts.interrupt() and set space_pressed.
-    Exits when stop_event is set or space is pressed. Unix + TTY only.
+    """Background thread: wait for spacebar, then interrupt TTS via the main event loop.
+
+    All TTS engines (especially ElevenLabs) expect ``interrupt()`` to run on
+    the asyncio thread, so we use ``loop.call_soon_threadsafe`` instead of
+    calling it directly from this thread.
     """
     if not sys.stdin.isatty():
         return
@@ -163,8 +167,8 @@ def _spacebar_watcher_thread(
                 if r and sys.stdin in r:
                     key = sys.stdin.read(1)
                     if key == " ":
-                        tts.interrupt()
-                        space_pressed.set()
+                        loop.call_soon_threadsafe(tts.interrupt)
+                        loop.call_soon_threadsafe(space_pressed.set)
                         break
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old)
@@ -182,10 +186,11 @@ async def _wait_for_spacebar_interrupt(
     if not sys.stdin.isatty() or sys.platform == "win32":
         await asyncio.Event().wait()  # never completes; caller will cancel us
         return
+    loop = asyncio.get_running_loop()
     space_pressed = asyncio.Event()
     thread = threading.Thread(
         target=_spacebar_watcher_thread,
-        args=(tts, space_pressed, stop_event),
+        args=(tts, loop, space_pressed, stop_event),
         daemon=True,
     )
     thread.start()
@@ -888,7 +893,7 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
                         space_task = asyncio.create_task(
                             _wait_for_spacebar_interrupt(tts, stop_event)
                         )
-                        done, pending = await asyncio.wait(
+                        _done, pending = await asyncio.wait(
                             [tts_task, space_task],
                             return_when=asyncio.FIRST_COMPLETED,
                         )
