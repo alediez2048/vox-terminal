@@ -447,7 +447,7 @@ vox-terminal/
 │       └── store.py                 # SQLite conversation store
 ├── tests/
 │   ├── conftest.py                  # Shared fixtures (project_root, settings, clean_env)
-│   ├── unit/                        # 130+ unit tests
+│   ├── unit/                        # 260+ unit tests
 │   │   ├── test_config.py
 │   │   ├── test_cli.py
 │   │   ├── test_audio_capture.py
@@ -533,7 +533,7 @@ pip install -e ".[dev,vad]"
 ### Run Tests
 
 ```bash
-# All tests (140 tests)
+# All tests (270+)
 pytest tests/ -v
 
 # With coverage
@@ -677,7 +677,7 @@ Power features for professional use:
 - [x] Mic error fallback to text input
 - [x] FallbackTTSEngine (cloud → local auto-switch)
 - [x] Pre-commit hooks (ruff, mypy, detect-secrets, conventional commits)
-- [x] 160+ tests (unit, integration, contract)
+- [x] 270+ tests (unit, integration, contract)
 
 ### Planned (Base)
 

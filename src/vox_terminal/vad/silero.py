@@ -41,6 +41,7 @@ class SileroVAD(VADEngine):
 
         if self._model is None:
             self._load_model()
+        assert self._model is not None
 
         # Silero expects float32 tensor, mono, 16kHz or 8kHz
         audio = chunk.flatten().astype(np.float32)

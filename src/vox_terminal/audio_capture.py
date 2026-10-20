@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 try:
     import sounddevice as sd
 except OSError:  # pragma: no cover — missing PortAudio / no mic access
-    sd = None  # type: ignore[assignment]
+    sd = None
     logger.warning("sounddevice unavailable — audio capture disabled")
 
 

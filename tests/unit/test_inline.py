@@ -141,3 +141,17 @@ def test_resolve_refuses_paths_outside_project(tmp_path):
 
     assert "do-not-send" not in out
     assert "ok = 1" in out
+
+
+def test_resolve_skips_env_and_key_files(tmp_path):
+    (tmp_path / ".env").write_text("API_KEY=env-secret\n")
+    (tmp_path / ".env.local").write_text("API_KEY=local-secret\n")
+    (tmp_path / "server.pem").write_text("-----BEGIN PRIVATE KEY-----\n")
+    (tmp_path / "config.py").write_text("debug = True\n")
+
+    out = resolve_and_read_files(tmp_path, [".env", ".env.local", "server.pem", "config.py"])
+
+    assert "env-secret" not in out
+    assert "local-secret" not in out
+    assert "PRIVATE KEY" not in out
+    assert "debug = True" in out

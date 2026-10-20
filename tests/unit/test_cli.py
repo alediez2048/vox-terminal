@@ -363,6 +363,12 @@ class TestAskAndSpeak:
 class TestStartCommand:
     """Tests for the ``start`` bootstrap command."""
 
+    @pytest.fixture(autouse=True)
+    def _api_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # ``start`` exits early without a key; give the happy-path tests a
+        # dummy one so they do not depend on the developer's shell.
+        monkeypatch.setenv("VOX_TERMINAL_LLM__API_KEY", "test-key")
+
     @patch("vox_terminal.cli._interactive_loop", new_callable=AsyncMock)
     def test_start_launches_interactive_loop(
         self, mock_loop: AsyncMock, project_root

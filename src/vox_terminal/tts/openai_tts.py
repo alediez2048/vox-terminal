@@ -39,7 +39,7 @@ class OpenAITTS(TTSEngine):
         t0 = _time.monotonic()
         response = await self._client.audio.speech.create(
             model=self._model,
-            voice=self._voice,  # type: ignore[arg-type]
+            voice=self._voice,
             input=text,
         )
         logger.debug("OpenAI TTS API: %.0fms", (_time.monotonic() - t0) * 1000)

@@ -34,6 +34,7 @@ from vox_terminal.observability import (
 )
 from vox_terminal.project_root import resolve_project_root
 from vox_terminal.stt import create_stt_engine
+from vox_terminal.stt.whisper_local import WhisperLocalSTT
 from vox_terminal.tts import create_tts_engine
 from vox_terminal.tts.base import TTSEngine
 from vox_terminal.tui.state import DisplayState
@@ -560,7 +561,7 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
         )
 
     async def _preload_stt() -> None:
-        if stt is not None and hasattr(stt, "_load_model") and not stt.model_loaded:
+        if isinstance(stt, WhisperLocalSTT) and not stt.model_loaded:
             model = await loop.run_in_executor(None, stt._load_model)
             stt._model = model  # store so transcribe() won't reload
 
@@ -603,7 +604,11 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
         )
         if prev:
             for role, content in prev:
-                history.append(Message(role=role, content=content))
+                if role not in ("user", "assistant"):
+                    continue
+                history.append(
+                    Message(role="user" if role == "user" else "assistant", content=content)
+                )
             if len(history) > max_history:
                 history = history[-max_history:]
             console.print(f"[dim]Loaded {len(prev)} messages from previous session.[/dim]")
@@ -619,6 +624,7 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
             turn_id = generate_turn_id()
             turn_waterfall = TurnWaterfall()
             if use_voice:
+                assert capture is not None and stt is not None
                 display_state.phase = "listening"
                 try:
                     audio = await capture.record_until_silence(
@@ -731,6 +737,7 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
             barge_in_interrupted = False
 
             if use_voice and settings.general.barge_in_enabled:
+                assert capture is not None
                 # Barge-in path: monitor mic during TTS (opt-in for headphone users)
                 record_task = asyncio.create_task(
                     capture.record_until_silence(
@@ -931,6 +938,7 @@ async def _interactive_loop(settings: VoxTerminalSettings) -> None:
                 with TurnContext(follow_up_turn_id):
                     stt_t0 = _time.monotonic()
                     follow_up_waterfall.mark("stt_start_ms", at=stt_t0)
+                    assert stt is not None
                     result = await stt.transcribe(interrupted_audio, settings.stt.sample_rate)
                     follow_up_waterfall.mark("stt_end_ms")
                     logger.info(

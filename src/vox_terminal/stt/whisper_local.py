@@ -63,6 +63,7 @@ class WhisperLocalSTT(STTEngine):
         """
         if self._model is None:
             self._model = self._load_model()
+        model = self._model
 
         beam_size = self._settings.whisper_beam_size
         if self._settings.whisper_profile == "conversational":
@@ -81,7 +82,7 @@ class WhisperLocalSTT(STTEngine):
         loop = asyncio.get_event_loop()
         segments, info = await loop.run_in_executor(
             None,
-            lambda: self._model.transcribe(audio, beam_size=beam_size),
+            lambda: model.transcribe(audio, beam_size=beam_size),
         )
 
         # Materialise segments (they are a generator)

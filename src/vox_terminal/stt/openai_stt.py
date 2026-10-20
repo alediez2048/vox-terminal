@@ -63,7 +63,7 @@ class OpenAISTT(STTEngine):
             data_size,
         )
 
-        return header + pcm_data
+        return header + bytes(pcm_data)
 
     # ------------------------------------------------------------------
     # Transcription

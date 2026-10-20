@@ -7,6 +7,8 @@ import re
 import time as _time
 from pathlib import Path
 
+from vox_terminal.context.sources.files import _SENSITIVE_NAMES
+
 logger = logging.getLogger(__name__)
 
 # Matches common file path patterns in natural speech/text
@@ -66,6 +68,22 @@ _BINARY_EXTENSIONS: frozenset[str] = frozenset(
         ".sqlite3",
     }
 )
+
+# Key and credential files that are never sent to the model, on top of
+# the ``.env`` family shared with the file-tree source.
+_SENSITIVE_SUFFIXES: frozenset[str] = frozenset({".pem", ".key", ".p12", ".pfx"})
+_SENSITIVE_PREFIXES: tuple[str, ...] = (".env", "id_rsa", "id_ed25519", "id_ecdsa")
+
+
+def _is_sensitive(path: Path) -> bool:
+    """True for files that may hold secrets (``.env*``, private keys)."""
+    name = path.name.lower()
+    return (
+        name in _SENSITIVE_NAMES
+        or name.startswith(_SENSITIVE_PREFIXES)
+        or path.suffix.lower() in _SENSITIVE_SUFFIXES
+    )
+
 
 _MAX_FILE_SIZE = 50_000  # bytes
 _MAX_INLINE_CHARS = 30_000  # total budget for inline files
@@ -176,6 +194,9 @@ def resolve_and_read_files(
             seen.add(path)
 
             if path.suffix.lower() in _BINARY_EXTENSIONS:
+                continue
+            if _is_sensitive(path):
+                logger.info("Skipped a sensitive file reference: %s", path.name)
                 continue
 
             try:
