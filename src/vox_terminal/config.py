@@ -138,9 +138,7 @@ class VoxTerminalSettings(BaseSettings):
     context: ContextSettings = Field(default_factory=ContextSettings)
 
 
-def load_settings(
-    *, project_root: Path | None = None, **overrides: object
-) -> VoxTerminalSettings:
+def load_settings(*, project_root: Path | None = None, **overrides: object) -> VoxTerminalSettings:
     """Load settings from TOML file + environment variables.
 
     Parameters

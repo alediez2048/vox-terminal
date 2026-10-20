@@ -80,6 +80,7 @@ class TTSEngine(ABC):
         on_event: Callable[[str, float], None] | None = None,
     ) -> None:
         """Stream TTS with first-clause flush and producer/consumer overlap."""
+
         def _emit(event_name: str) -> None:
             if on_event is not None:
                 on_event(event_name, _time.monotonic())

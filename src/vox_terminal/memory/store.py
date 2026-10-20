@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -60,7 +60,7 @@ class ConversationStore:
     def create_session(self, project_root: str) -> str:
         """Create a new session and return its ID."""
         session_id = uuid.uuid4().hex
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         self._conn.execute(
             "INSERT INTO sessions (id, started_at, project_root) VALUES (?, ?, ?)",
             (session_id, now, project_root),
@@ -77,7 +77,7 @@ class ConversationStore:
     ) -> None:
         """Persist a single message."""
         msg_id = uuid.uuid4().hex
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         self._conn.execute(
             "INSERT INTO messages (id, session_id, role, content, timestamp) "
             "VALUES (?, ?, ?, ?, ?)",

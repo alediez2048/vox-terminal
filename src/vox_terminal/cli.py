@@ -134,9 +134,7 @@ def _log_turn_waterfall(
     snapshot = waterfall.snapshot_ms()
     if not snapshot:
         return
-    fields = ", ".join(
-        f"{key}={snapshot[key]:.1f}" for key in sorted(snapshot)
-    )
+    fields = ", ".join(f"{key}={snapshot[key]:.1f}" for key in sorted(snapshot))
     logger.info("%s %s", label, fields)
 
 
@@ -334,7 +332,7 @@ async def _ask_and_speak(
         else:
             console.print(f"[red]Unexpected error: {exc}[/red]")
         return ""
-    except (TimeoutError, asyncio.TimeoutError):
+    except TimeoutError:
         console.print("[yellow]Response timed out — try again.[/yellow]")
         return ""
     except httpx.HTTPError as exc:
@@ -441,7 +439,9 @@ async def _run_diagnostics(
             if hasattr(stt, "_load_model"):
                 loop = asyncio.get_running_loop()
                 await loop.run_in_executor(None, stt._load_model)
-            results.append(("stt", True, f"engine={settings.stt.engine}", (_time.monotonic() - t0) * 1000))
+            results.append(
+                ("stt", True, f"engine={settings.stt.engine}", (_time.monotonic() - t0) * 1000)
+            )
         except Exception as exc:
             results.append(("stt", False, str(exc), (_time.monotonic() - t0) * 1000))
 
@@ -468,7 +468,9 @@ async def _run_diagnostics(
         try:
             tts = create_tts_engine(settings.tts)
             await tts.speak("Diagnostics complete.")
-            results.append(("tts", True, f"engine={settings.tts.engine}", (_time.monotonic() - t0) * 1000))
+            results.append(
+                ("tts", True, f"engine={settings.tts.engine}", (_time.monotonic() - t0) * 1000)
+            )
         except Exception as exc:
             results.append(("tts", False, str(exc), (_time.monotonic() - t0) * 1000))
 
@@ -1237,8 +1239,7 @@ def diagnose(
             if not ok:
                 has_failure = True
             console.print(
-                f"[{style}]{stage.upper():<8} {status}[/{style}] "
-                f"{detail} ({elapsed_ms:.0f} ms)"
+                f"[{style}]{stage.upper():<8} {status}[/{style}] {detail} ({elapsed_ms:.0f} ms)"
             )
             logger.info(
                 "Diagnose benchmark result (iteration=%d, stage=%s, ok=%s, elapsed_ms=%.0f, detail=%s)",
