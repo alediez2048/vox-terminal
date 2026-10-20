@@ -151,6 +151,7 @@ def resolve_and_read_files(
     total = 0
     seen: set[Path] = set()
     filename_index = _get_filename_index(project_root)
+    root = project_root.resolve()
 
     for ref in references:
         # Try as-is relative to project root
@@ -167,6 +168,9 @@ def resolve_and_read_files(
 
         for path in candidates:
             path = path.resolve()
+            # Never read outside the project, e.g. "../secrets" or "/etc/passwd".
+            if not path.is_relative_to(root):
+                continue
             if path in seen or not path.is_file():
                 continue
             seen.add(path)
@@ -194,10 +198,7 @@ def resolve_and_read_files(
             if len(content) > remaining:
                 content = content[:remaining]
 
-            try:
-                rel = path.relative_to(project_root)
-            except ValueError:
-                rel = path
+            rel = path.relative_to(root)
 
             blocks.append(f"[File: {rel}]\n```\n{content}\n```")
             total += len(content)

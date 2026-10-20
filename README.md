@@ -89,13 +89,13 @@ User speaks → float32 audio (16kHz mono)
 ### One-Command Install (macOS — recommended)
 
 ```bash
-brew install portaudio && pip install vox-terminal
+brew install portaudio && pip install "git+https://github.com/alediez2048/vox-terminal.git"
 ```
 
 Or use the install script which handles everything:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jad/vox-terminal/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/alediez2048/vox-terminal/main/install.sh | bash
 ```
 
 ### API Key
@@ -462,13 +462,10 @@ vox-terminal/
 │   │   └── test_pipeline.py         # STT → LLM → TTS pipeline tests
 │   └── contracts/
 │       └── test_mcp_server.py       # MCP tool schema/contract tests
-├── Formula/
-│   └── vox-terminal.rb              # Homebrew formula
 ├── install.sh                       # One-command macOS installer
 ├── pyproject.toml                   # Dependencies, build config, tool settings
 ├── .pre-commit-config.yaml          # ruff, mypy, detect-secrets, conventional commits
 ├── .gitignore
-├── VoxCursor_PRD.md                 # Product requirements document
 └── README.md
 ```
 
@@ -590,7 +587,7 @@ chore(ci): add Python 3.14 to test matrix
 
 | Category | Choice | Why |
 |---|---|---|
-| Language | Python 3.10+ | Best ecosystem for audio, ML, and LLM SDKs |
+| Language | Python 3.11+ | Best ecosystem for audio, ML, and LLM SDKs |
 | Build | `hatchling` via `pyproject.toml` | Modern Python packaging |
 | CLI | `typer` + `rich` | Type-annotated CLI with rich terminal output |
 | Config | `pydantic-settings` | Validated, typed config with env var + TOML |

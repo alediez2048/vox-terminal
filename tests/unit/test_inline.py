@@ -129,3 +129,15 @@ class TestInjectFileContext:
         question = "Check nonexistent_file.xyz"
         result = inject_file_context(question, project_root)
         assert result == question
+
+
+def test_resolve_refuses_paths_outside_project(tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "inside.py").write_text("ok = 1\n")
+    (tmp_path / "secret.txt").write_text("API_KEY=do-not-send\n")
+
+    out = resolve_and_read_files(project, ["../secret.txt", str(tmp_path / "secret.txt"), "inside.py"])
+
+    assert "do-not-send" not in out
+    assert "ok = 1" in out

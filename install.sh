@@ -2,7 +2,7 @@
 # One-command installer for vox-terminal on macOS.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/jad/vox-terminal/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/alediez2048/vox-terminal/main/install.sh | bash
 #
 # What it does:
 #   1. Installs portaudio via Homebrew (required for microphone access)
@@ -23,7 +23,7 @@ dim()   { echo -e "${DIM}    $*${RESET}"; }
 
 if [[ "$(uname)" != "Darwin" ]]; then
     warn "This installer is macOS-only. On Linux, install manually:"
-    dim "pip install vox-terminal"
+    dim "pip install git+https://github.com/alediez2048/vox-terminal.git"
     exit 1
 fi
 
@@ -46,16 +46,16 @@ fi
 
 if command -v pipx &>/dev/null; then
     info "Installing vox-terminal via pipx..."
-    pipx install vox-terminal 2>/dev/null || pipx upgrade vox-terminal
+    pipx install --force "git+https://github.com/alediez2048/vox-terminal.git"
 elif command -v uvx &>/dev/null; then
     info "Installing vox-terminal via uv..."
-    uv tool install vox-terminal 2>/dev/null || uv tool upgrade vox-terminal
+    uv tool install --force "git+https://github.com/alediez2048/vox-terminal.git"
 else
     info "Installing pipx..."
     brew install pipx
     pipx ensurepath
     info "Installing vox-terminal via pipx..."
-    pipx install vox-terminal
+    pipx install --force "git+https://github.com/alediez2048/vox-terminal.git"
 fi
 
 # --- Done ---------------------------------------------------------------------

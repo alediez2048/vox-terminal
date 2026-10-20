@@ -41,3 +41,7 @@ htmlcov/
 *.mp3
 *.ogg
 .claude/
+
+# Local AI tooling
+.cursor/
+.claude/

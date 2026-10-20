@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Voice-powered terminal assistant"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [{ name = "Jad" }]
 keywords = ["voice", "assistant", "terminal", "tts", "stt", "cli"]
 classifiers = [
@@ -18,7 +18,6 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: MacOS",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -57,9 +56,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/jad/vox-terminal"
-Repository = "https://github.com/jad/vox-terminal"
-Issues = "https://github.com/jad/vox-terminal/issues"
+Homepage = "https://github.com/alediez2048/vox-terminal"
+Repository = "https://github.com/alediez2048/vox-terminal"
+Issues = "https://github.com/alediez2048/vox-terminal/issues"
 
 [project.scripts]
 vox-terminal = "vox_terminal.cli:app_main"
@@ -68,7 +67,7 @@ vox-terminal = "vox_terminal.cli:app_main"
 packages = ["src/vox_terminal"]
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py311"
 line-length = 100
 src = ["src"]
 
@@ -77,7 +76,7 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
 ignore = ["E501"]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 strict = true
 warn_return_any = true
 warn_unused_configs = true
