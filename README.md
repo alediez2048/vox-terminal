@@ -1,5 +1,7 @@
 # Vox-Terminal
 
+[![CI](https://github.com/alediez2048/vox-terminal/actions/workflows/ci.yml/badge.svg)](https://github.com/alediez2048/vox-terminal/actions/workflows/ci.yml)
+
 Voice-powered coding assistant for IDEs like Cursor, VS Code, and CLI agents like Claude Code. Ask questions about your project by speaking and receive spoken answers — powered by Claude, Whisper, and ElevenLabs/macOS TTS.
 
 ## Table of Contents
@@ -16,7 +18,6 @@ Voice-powered coding assistant for IDEs like Cursor, VS Code, and CLI agents lik
 - [Project Structure](#project-structure)
 - [Module Reference](#module-reference)
 - [Development](#development)
-- [Feature Tiers](#feature-tiers)
 - [Roadmap](#roadmap)
 - [License](#license)
 
@@ -598,63 +599,11 @@ chore(ci): add Python 3.14 to test matrix
 | TTS (cloud) | `elevenlabs`, `openai` | High quality natural voices |
 | VAD | `silero-vad` / energy | ML-based or simple RMS threshold |
 | Audio | `sounddevice` + `numpy` | Cross-platform mic capture |
-| MCP | `mcp[cli]` (FastMCP) | Official Model Context Protocol SDK |
+| MCP | `mcp[cli]` 1.x (FastMCP) | Official Model Context Protocol SDK |
 | Testing | `pytest` + `pytest-asyncio` + `pytest-mock` | Async-native test suite |
 | Linting | `ruff` | Fast all-in-one linter + formatter |
 
-### Dependencies
-
-**Core:**
-```
-anthropic>=0.40.0       faster-whisper>=1.1.0    numpy>=1.26.0
-openai>=1.50.0          pydantic>=2.9.0          pydantic-settings>=2.6.0
-sounddevice>=0.5.0      typer>=0.15.0            rich>=13.9.0
-mcp[cli]>=1.0.0         elevenlabs>=1.0.0
-```
-
-**Optional (`[vad]`):**
-```
-silero-vad>=5.0         torch>=2.0
-```
-
-**Dev (`[dev]`):**
-```
-pytest>=8.0             pytest-asyncio>=0.24.0   pytest-cov>=6.0
-pytest-mock>=3.14       ruff>=0.8.0              mypy>=1.13
-pre-commit>=4.0         detect-secrets>=1.5
-```
-
----
-
-## Feature Tiers
-
-### Base (Free)
-
-All core functionality ships free:
-
-| Feature | Description |
-|---|---|
-| Voice loop | Hands-free listen → transcribe → LLM → TTS → repeat |
-| Streaming TTS | Response plays while LLM is still generating |
-| Barge-in | Interrupt TTS mid-speech (opt-in, headphones recommended) |
-| Conversation memory | SQLite-backed history, per-project, cross-session |
-| Project context | Git state, directory tree, config files, README, doc files |
-| File content reading | Auto-read configs, docs, and user-specified globs into context |
-| Swappable engines | STT (Whisper/OpenAI), TTS (say/ElevenLabs/OpenAI), VAD (Silero/energy) |
-| Graceful degradation | Mic → text fallback, cloud TTS → local fallback, clean error messages |
-| MCP server | Expose tools to Cursor/VS Code via Model Context Protocol |
-| Claude LLM | Streaming responses with project context injection |
-
-### Premium
-
-Power features for professional use:
-
-| Feature | Description | Status |
-|---|---|---|
-| Multi-model support | Switch between Claude, GPT-5.3, Gemini, Kimi, and other LLM providers | Planned |
-| Question-aware retrieval | Lightweight RAG — greps codebase for terms in your question, includes matching file excerpts in context automatically | Planned |
-| Wake-word activation | "Hey Vox" hands-free trigger without keyboard interaction | Planned |
-| Custom context plugins | Pull context from external sources (Jira, CI status, Slack, etc.) | Planned |
+Exact version ranges live in `pyproject.toml`.
 
 ---
 
@@ -677,22 +626,18 @@ Power features for professional use:
 - [x] Mic error fallback to text input
 - [x] FallbackTTSEngine (cloud → local auto-switch)
 - [x] Pre-commit hooks (ruff, mypy, detect-secrets, conventional commits)
+- [x] CI on Linux and macOS, Python 3.11 to 3.14 (ruff, mypy strict, pytest with a coverage gate)
 - [x] 270+ tests (unit, integration, contract)
 
-### Planned (Base)
+### Planned
 
-- [ ] **Menubar app** — SwiftUI/Tauri wrapper with global hotkey and system tray presence
-- [ ] **Push-to-talk hotkey** — global keyboard shortcut to toggle listening
-- [ ] **Piper TTS** — fully local, cross-platform TTS (no API key needed)
-- [ ] **CI/CD pipeline** — GitHub Actions for lint, test, build, and PyPI release
-- [ ] **Cross-platform audio** — Linux/Windows playback support beyond macOS
-
-### Planned (Premium)
-
-- [ ] **Multi-model support** — switch between Claude, GPT-5.3, Gemini, Kimi, and other providers
-- [ ] **Question-aware retrieval** — lightweight keyword-based RAG that greps the codebase for terms in your question and includes matching file excerpts in context
-- [ ] **Wake-word activation** — "Hey Vox" hands-free trigger
-- [ ] **Custom context plugins** — user-defined context sources (Jira, CI status, etc.)
+- [ ] **Menubar app**: SwiftUI or Tauri wrapper with a global hotkey and system tray presence
+- [ ] **Push-to-talk hotkey**: global keyboard shortcut to toggle listening
+- [ ] **Piper TTS**: fully local, cross-platform TTS with no API key
+- [ ] **Cross-platform audio**: Linux and Windows playback beyond macOS
+- [ ] **Multi-model support**: other LLM providers alongside Claude
+- [ ] **Question-aware retrieval**: grep the codebase for terms in the question and include matching excerpts
+- [ ] **Wake-word activation**: hands-free trigger without the keyboard
 
 ---
 
